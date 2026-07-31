@@ -66,7 +66,7 @@ exports.updateGpsCoordinates = async (gpsRecords) => {
   // ── Step 1: Load current bus data for comparison ───────────
   const { data: allBuses, error: fetchError } = await supabase
     .from("buses")
-    .select("id, bus_number, registration_number, latitude, longitude");
+    .select("id, bus_number, registration_number, imei, latitude, longitude");
 
   if (fetchError) {
     throw new Error(`Failed to fetch buses for GPS update: ${fetchError.message}`);
@@ -98,6 +98,15 @@ exports.updateGpsCoordinates = async (gpsRecords) => {
     }
 
     if (!bus) {
+      // Third fallback: match by IMEI (if buses.imei column is populated)
+      if (record.imei) {
+        bus = buses.find(
+          (b) => b.imei && b.imei.trim() === record.imei.trim()
+        );
+      }
+    }
+
+    if (!bus) {
       gpsLogger.logParseWarning(
         record.vehicleNumber || record.imei,
         "No matching bus found in database — skipped"
@@ -119,14 +128,23 @@ exports.updateGpsCoordinates = async (gpsRecords) => {
     }
 
     // ── Perform UPDATE ─────────────────────────────────────
+    const updatePayload = {
+      latitude:         record.latitude,
+      longitude:        record.longitude,
+      status:           record.status,
+      updated_at:       new Date().toISOString(),
+      // GPS device identity fields (written on every sync)
+      ...(record.imei          && { imei:             record.imei }),
+      ...(record.simNumber      && { sim_number:       record.simNumber }),
+      // Telemetry fields
+      ...(record.speed  != null && { speed:            record.speed }),
+      ...(record.gpsActualTime  && { gps_actual_time:  record.gpsActualTime }),
+      ...(record.location       && { last_location:    record.location }),
+    };
+
     const { data: updatedBus, error: updateError } = await writeClient()
       .from("buses")
-      .update({
-        latitude:   record.latitude,
-        longitude:  record.longitude,
-        status:     record.status,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", bus.id)
       .select()
       .single();

@@ -114,6 +114,7 @@ exports.parseGpsResponse = (rawResponse) => {
 
     // Extract identification fields
     const imei          = String(record.imei || record.IMEI || record.deviceId || "").trim();
+    const simNumber     = String(record.simNumber || record.sim_number || record.sim || record.msisdn || "").trim();
     const vehicleNumber = String(
       record.vehicleNumber || record.vehicle_number || record.regNo || record.registrationNumber || ""
     ).trim();
@@ -136,14 +137,15 @@ exports.parseGpsResponse = (rawResponse) => {
     }
 
     // Parse optional fields with safe fallbacks
-    const speed = parseFloat(record.speed || record.Speed || 0) || 0;
-    const status = mapStatus(record.status || record.deviceStatus || "");
+    const speed         = parseFloat(record.speed || record.Speed || 0) || 0;
+    const status        = mapStatus(record.status || record.deviceStatus || "");
     const gpsActualTime = record.gpsActualTime || record.gps_time || record.datetime || new Date().toISOString();
-    const location = record.location || record.address || "";
+    const location      = String(record.location || record.address || record.place || "").trim();
 
     parsed.push({
       vehicleNumber,
       imei,
+      simNumber,
       latitude,
       longitude,
       speed,
