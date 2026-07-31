@@ -11,19 +11,22 @@ import './App.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://bus-tracking-zbon.onrender.com';
 
-/**
- * Helper to get the stored Supabase JWT token.
- */
-const getToken = () => sessionStorage.getItem('authToken');
+// ── Map Supabase column names → frontend field names ─────────────────────
+const mapFromDb = (row) => ({
+  id: row.id,
+  busId: row.bus_number || '',
+  busNo: row.registration_number || '',
+  driver: row.driver_name || '',
+  contact: row.driver_phone || '',
+  route: row.route_name || '',
+  license: row.license_number || '',
+  status: row.status || 'Pending (GPS)',
+  latitude: row.latitude,
+  longitude: row.longitude,
+});
 
 /**
  * App — Root component.
- *
- * Changes from v1:
- *   - Buses are now fetched from the backend API in App.jsx (was in BusesPage)
- *   - useSocketBus hook manages real-time GPS updates + interpolation
- *   - Login delegates to Supabase directly (no backend auth endpoint)
- *   - Logout signs out from Supabase session
  */
 export default function App() {
   const [isLoggedIn, setIsLoggedIn]             = useState(() => sessionStorage.getItem('isLoggedIn') === 'true');
@@ -35,17 +38,15 @@ export default function App() {
   const [showLogoutModal, setShowLogoutModal]   = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // ── Real-time GPS updates + smooth interpolation ───────────────────────
-  // Wraps rawBuses with Socket.IO listener and client-side interpolation.
-  // `buses` should be used everywhere in the UI (includes live GPS positions).
-  const { buses, connected } = useSocketBus(rawBuses, authToken);
+  // ── Real-time GPS updates + smooth interpolation ──────────────────────
+  const { buses } = useSocketBus(rawBuses, authToken);
 
   const navigationItems = [
     { name: 'Dashboard', icon: Home },
     { name: 'Buses', icon: Bus },
   ];
 
-  // ── Fetch initial bus list from backend ─────────────────────────────────
+  // ── Fetch initial bus list from backend ───────────────────────────────
   useEffect(() => {
     if (!isLoggedIn || !authToken) return;
 
@@ -56,9 +57,8 @@ export default function App() {
         });
         if (!res.ok) throw new Error(`Failed to load buses (${res.status})`);
         const json = await res.json();
-        // Backend now returns { success, data, message } shape
         const data = json.data || json;
-        setRawBuses(Array.isArray(data) ? data : []);
+        setRawBuses(Array.isArray(data) ? data.map(mapFromDb) : []);
       } catch (err) {
         console.error('[App] fetchBuses:', err.message);
       }
@@ -77,7 +77,6 @@ export default function App() {
 
   // ── Handle logout ─────────────────────────────────────────────────────
   const handleLogout = async () => {
-    // Sign out from Supabase session
     await supabase.auth.signOut();
     localStorage.clear();
     sessionStorage.clear();
@@ -105,26 +104,30 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', backgroundColor: '#f5f5f5' }}>
-      {/* Sidebar */}
+
+      {/* ── Sidebar ─────────────────────────────────────────────────── */}
       <div style={{
         width: sidebarOpen ? '250px' : '70px',
         backgroundColor: '#2c3e50',
         color: 'white',
         transition: 'width 0.3s ease',
         overflowY: 'auto',
-        position: 'relative'
+        display: 'flex',
+        flexDirection: 'column',
       }}>
+        {/* Logo / Toggle */}
         <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {sidebarOpen && <h2 style={{ margin: 0, fontSize: '18px' }}>AmcetTransit</h2>}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '20px' }}
+            style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
           >
             <Menu size={24} />
           </button>
         </div>
 
-        <nav style={{ padding: '20px 0' }}>
+        {/* Navigation */}
+        <nav style={{ padding: '20px 0', flex: 1 }}>
           {navigationItems.map(item => {
             const IconComponent = item.icon;
             return (
@@ -141,7 +144,7 @@ export default function App() {
                   gap: '15px',
                   transition: 'all 0.2s ease',
                   fontSize: '14px',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <IconComponent size={20} />
@@ -150,32 +153,11 @@ export default function App() {
             );
           })}
         </nav>
-
-        {/* Socket.IO connection indicator */}
-        {sidebarOpen && (
-          <div style={{
-            position: 'absolute',
-            bottom: '16px',
-            left: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '11px',
-            color: connected ? '#4CAF50' : '#f44336',
-          }}>
-            <span style={{
-              width: '7px', height: '7px',
-              borderRadius: '50%',
-              background: connected ? '#4CAF50' : '#f44336',
-              display: 'inline-block',
-            }} />
-            {connected ? 'Live' : 'Offline'}
-          </div>
-        )}
       </div>
 
-      {/* Main Content */}
+      {/* ── Main Content ──────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
         {/* Header */}
         <header style={{
           backgroundColor: 'white',
@@ -184,7 +166,7 @@ export default function App() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
         }}>
           <h1 style={{ margin: 0, fontSize: '24px', color: '#2c3e50' }}>{currentPage}</h1>
 
@@ -199,7 +181,7 @@ export default function App() {
                 color: '#718096', display: 'flex', alignItems: 'center',
                 justifyContent: 'center', cursor: 'pointer',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
+                transition: 'background-color 0.2s, color 0.2s, box-shadow 0.2s, border-color 0.2s',
                 flexShrink: 0,
               }}
               onMouseEnter={e => {
@@ -219,7 +201,7 @@ export default function App() {
             </button>
 
             {/* Profile avatar */}
-            <div 
+            <div
               onClick={() => setShowProfileModal(true)}
               style={{
                 width: '38px', height: '38px', borderRadius: '50%',
@@ -234,24 +216,24 @@ export default function App() {
           </div>
         </header>
 
-        {/* Content Area */}
+        {/* Page content */}
         <div style={{
           flex: 1, overflow: 'hidden', display: 'flex',
           flexDirection: 'column', padding: '20px 30px',
-          backgroundColor: '#f5f5f5'
+          backgroundColor: '#f5f5f5',
         }}>
           {renderPage()}
         </div>
       </div>
 
-      {/* Logout confirmation modal */}
+      {/* Logout modal */}
       <LogoutModal
         isOpen={showLogoutModal}
         onCancel={() => setShowLogoutModal(false)}
         onConfirm={handleLogout}
       />
 
-      {/* Profile modal popup */}
+      {/* Profile modal */}
       <Profile
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
