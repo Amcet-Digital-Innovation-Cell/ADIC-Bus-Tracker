@@ -33,17 +33,21 @@ const gpsRoutes       = require("./gps/gps.routes");
 
 const app = express();
 
-// ── CORS ──────────────────────────────────────────────────────────────────
-// Allow requests from the configured frontend URL.
-// In production set FRONTEND_URL=https://your-app.vercel.app in Render.
-// During development, defaults to '*' so local Vite dev server works.
+// Parse FRONTEND_URL — supports comma-separated values for multiple domains
+// e.g. FRONTEND_URL=https://bus-transit-indol.vercel.app,https://old-app.vercel.app
+const parsedOrigins = config.frontendUrl === "*"
+  ? "*"
+  : [
+      ...config.frontendUrl.split(",").map((u) => u.trim()).filter(Boolean),
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ];
+
 const corsOptions = {
-  origin: config.frontendUrl === "*"
-    ? "*"
-    : [config.frontendUrl, "http://localhost:5173", "http://localhost:3000"],
-  methods:     ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  origin: parsedOrigins,
+  methods:        ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: config.frontendUrl !== "*",
+  credentials:    config.frontendUrl !== "*",
 };
 
 app.use(cors(corsOptions));
