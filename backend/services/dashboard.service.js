@@ -8,7 +8,10 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-const { supabase } = require("../config/supabase");
+const { supabase, adminSupabase } = require("../config/supabase");
+
+/** Use admin client when available (bypasses RLS) */
+const readClient = () => adminSupabase || supabase;
 
 /**
  * getFleetStats
@@ -24,7 +27,7 @@ const { supabase } = require("../config/supabase");
  */
 exports.getFleetStats = async () => {
   // Fetch all buses — lightweight query (only status + updated_at needed)
-  const { data, error } = await supabase
+  const { data, error } = await readClient()
     .from("buses")
     .select("status, updated_at, latitude, longitude");
 

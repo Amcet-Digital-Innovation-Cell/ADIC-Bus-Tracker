@@ -17,7 +17,8 @@
 
 const { supabase, adminSupabase } = require("../config/supabase");
 
-/** Use admin client when available (bypasses RLS for writes) */
+/** Use admin client when available (bypasses RLS for reads AND writes) */
+const readClient  = () => adminSupabase || supabase;
 const writeClient = () => adminSupabase || supabase;
 
 /**
@@ -27,7 +28,7 @@ const writeClient = () => adminSupabase || supabase;
  * @returns {Promise<object[]>}
  */
 exports.getAllBuses = async () => {
-  const { data, error } = await supabase
+  const { data, error } = await readClient()
     .from("buses")
     .select("*")
     .order("id", { ascending: true });
@@ -44,7 +45,7 @@ exports.getAllBuses = async () => {
  * @returns {Promise<object>}
  */
 exports.getBusById = async (id) => {
-  const { data, error } = await supabase
+  const { data, error } = await readClient()
     .from("buses")
     .select("*")
     .eq("id", id)

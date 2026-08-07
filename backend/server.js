@@ -43,12 +43,21 @@ initSocket(httpServer);
 // ── Start listening ────────────────────────────────────────────────────────
 httpServer.listen(config.port, () => {
   console.log("═══════════════════════════════════════════════");
-  console.log("  🚌  AmcetTransit Bus Tracking — v2.0.0");
+  console.log("  🚌  AmcetTransit Bus Tracking — v2.1.0");
   console.log("═══════════════════════════════════════════════");
   console.log(`  🌐  HTTP   : http://localhost:${config.port}`);
   console.log(`  🔌  Socket : ws://localhost:${config.port}`);
   console.log(`  🌍  Env    : ${config.nodeEnv}`);
   console.log(`  📡  CORS   : ${config.frontendUrl}`);
+  console.log("═══════════════════════════════════════════════");
+  console.log("  Routes:");
+  console.log(`  🔒  GET  /api/dashboard          (SkyNav stats)`);
+  console.log(`  🔒  GET  /api/buses              (fleet list)`);
+  console.log(`  🔒  GET  /api/gps/sync           (manual SkyNav sync)`);
+  console.log(`  🔒  GET  /api/gps/status         (scheduler status)`);
+  console.log(`  🔒  POST /api/realtime/gps/update (device GPS push)`);
+  console.log(`  🔒  GET  /api/realtime/gps/live  (latest GPS location)`);
+  console.log(`  🔑  POST /traccar/webhook         (Traccar webhook, public)`);
   console.log("═══════════════════════════════════════════════");
 
   // ── Start GPS scheduler AFTER server is ready ──────────────

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, X, Search } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bus-tracking-backend-8sjh.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://bus-tracking-zbon.onrender.com';
 
 // Helper to get stored JWT token
 const getToken = () => sessionStorage.getItem('authToken');
@@ -42,8 +42,10 @@ const BusesPage = ({ buses, setBuses }) => {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
         if (!res.ok) throw new Error(`Failed to load buses (${res.status})`);
-        const data = await res.json();
-        setBuses(Array.isArray(data) ? data.map(mapFromDb) : []);
+        const json = await res.json();
+        // Backend returns { success: true, data: [...] }
+        const rawList = json.data || json;
+        setBuses(Array.isArray(rawList) ? rawList.map(mapFromDb) : []);
       } catch (err) {
         console.error('fetchBuses:', err.message);
       }
@@ -51,12 +53,18 @@ const BusesPage = ({ buses, setBuses }) => {
     fetchBuses();
   }, []);
 
-  // Filter logic
-  const filteredBuses = buses.filter(bus =>
-    (bus.busNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.route || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.driver || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Buses from App.jsx have raw DB names; buses fetched locally are mapped.
+  // Support both so filtering works in all cases.
+  const filteredBuses = buses
+    .map(bus => (bus.busNo !== undefined ? bus : mapFromDb(bus))) // normalise raw rows
+    .filter(bus => {
+      const term = searchTerm.toLowerCase();
+      return (
+        (bus.busNo  || '').toLowerCase().includes(term) ||
+        (bus.route  || '').toLowerCase().includes(term) ||
+        (bus.driver || '').toLowerCase().includes(term)
+      );
+    });
 
   // ── Create / Update ────────────────────────────────────────────────────────
   const handleSave = async () => {
