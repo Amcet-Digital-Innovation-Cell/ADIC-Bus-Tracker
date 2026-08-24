@@ -29,9 +29,18 @@ if (missing.length > 0) {
 }
 
 // ── Optional GPS (SkyNav) variables — logged as warnings if absent ──────────
+// SKYNAV_BEARER_TOKEN is intentionally excluded — the demo credentials work
+// WITHOUT a bearer token. It is only sent if explicitly set in the environment.
 const GPS_VARS = [
   "SKYNAV_API_URL",
-  "SKYNAV_BEARER_TOKEN",
+  "SKYNAV_USERNAME",
+  "SKYNAV_PASSWORD",
+  "SKYNAV_PROJECT_ID",
+  "SKYNAV_COMPANY_NAME",
+];
+
+// REQUIRED for isConfigured (bearer token is optional)
+const REQUIRED_GPS_VARS = [
   "SKYNAV_USERNAME",
   "SKYNAV_PASSWORD",
   "SKYNAV_PROJECT_ID",
@@ -41,7 +50,7 @@ const GPS_VARS = [
 const missingGps = GPS_VARS.filter((key) => !process.env[key]);
 if (missingGps.length > 0) {
   console.warn(
-    `\n⚠️  SkyNav GPS not configured. Missing: ${missingGps.join(", ")}.\n` +
+    `\n⚠️  SkyNav GPS not fully configured. Missing: ${missingGps.join(", ")}.\n` +
     `   GPS scheduler will start but skip sync until credentials are added.\n`
   );
 }
@@ -76,8 +85,9 @@ const config = {
     projectId: process.env.SKYNAV_PROJECT_ID || null,
     companyName: process.env.SKYNAV_COMPANY_NAME || null,
     imei: process.env.SKYNAV_IMEI || null,                  // Primary device IMEI (optional)
-    pollIntervalMs: parseInt(process.env.GPS_POLL_INTERVAL_MS || "30000", 10),
-    isConfigured: GPS_VARS.every((key) => !!process.env[key]),
+    pollIntervalMs: parseInt(process.env.GPS_POLL_INTERVAL_MS || "60000", 10),
+    // isConfigured: bearer token is optional — only require username/password/projectId/companyName
+    isConfigured: REQUIRED_GPS_VARS.every((key) => !!process.env[key]),
   },
 
   // Socket.IO

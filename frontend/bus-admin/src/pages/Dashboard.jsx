@@ -24,7 +24,7 @@ function KpiCard({ variant, icon: Icon, iconColor, label, value, sub }) {
 /* ─────────────────────────────────────────
    Dashboard page
 ───────────────────────────────────────── */
-export default function Dashboard({ buses }) {
+export default function Dashboard({ buses, authToken }) {
   const totalBuses = buses.length;
   const activeBuses = buses.filter(b => b.status === 'Active' || b.status === 'active').length;
   const offline = buses.filter(b => b.status === 'Inactive' || b.status === 'inactive' || b.status === 'Pending (GPS)').length;
@@ -184,6 +184,7 @@ export default function Dashboard({ buses }) {
           bus={selectedBus}
           buses={buses}
           onClose={handleCloseTracking}
+          authToken={authToken}
         />
       )}
     </div>

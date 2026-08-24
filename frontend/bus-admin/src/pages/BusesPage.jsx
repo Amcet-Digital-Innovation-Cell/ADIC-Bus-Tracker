@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, X, Search } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bus-tracking-backend-8sjh.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://bustransit-g4ks.onrender.com';
 
 // Helper to get stored JWT token
 const getToken = () => sessionStorage.getItem('authToken');
@@ -14,6 +14,7 @@ const mapFromDb = (row) => ({
   driver: row.driver_name || '',
   contact: row.driver_phone || '',
   route: row.route_name || '',
+  route_id: row.route_id || '',
   license: row.license_number || '',
   status: row.status || 'Pending (GPS)',
   latitude: row.latitude,
@@ -31,8 +32,35 @@ const BusesPage = ({ buses, setBuses }) => {
   const [apiError, setApiError] = useState('');
   const cancelDeleteRef = useRef(null);
 
-  const emptyForm = { route: '', busNo: '', busId: '', driver: '', contact: '', license: '' };
+  const emptyForm = { route_id: '', route: '', busNo: '', busId: '', driver: '', contact: '', license: '' };
   const [formData, setFormData] = useState(emptyForm);
+
+  const [routesList, setRoutesList] = useState([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routesError, setRoutesError] = useState('');
+
+  // ── Load routes from Supabase on mount ──────────────────────────────────
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      setRoutesLoading(true);
+      setRoutesError('');
+      try {
+        const res = await fetch(`${API_BASE}/api/routes`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) throw new Error(`Failed to load routes (${res.status})`);
+        const json = await res.json();
+        const data = json.data || json;
+        setRoutesList(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('fetchRoutes:', err.message);
+        setRoutesError(err.message || 'Failed to load routes');
+      } finally {
+        setRoutesLoading(false);
+      }
+    };
+    fetchRoutes();
+  }, []);
 
   // ── Load buses from Supabase on mount ──────────────────────────────────────
   useEffect(() => {
@@ -42,7 +70,8 @@ const BusesPage = ({ buses, setBuses }) => {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
         if (!res.ok) throw new Error(`Failed to load buses (${res.status})`);
-        const data = await res.json();
+        const json = await res.json();
+        const data = json.data || json;
         setBuses(Array.isArray(data) ? data.map(mapFromDb) : []);
       } catch (err) {
         console.error('fetchBuses:', err.message);
@@ -61,6 +90,10 @@ const BusesPage = ({ buses, setBuses }) => {
   // ── Create / Update ────────────────────────────────────────────────────────
   const handleSave = async () => {
     setApiError('');
+    if (!formData.route_id) {
+      setApiError('Route selection is required');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -68,7 +101,7 @@ const BusesPage = ({ buses, setBuses }) => {
         busId: formData.busId,
         driver: formData.driver,
         contact: formData.contact,
-        route: formData.route,
+        route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
         license: formData.license,
       };
 
@@ -173,8 +206,17 @@ const BusesPage = ({ buses, setBuses }) => {
           <table className="w-full text-center table-fixed border-collapse">
             <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold">
               <tr>
-                {['Bus ID', 'Route', 'Bus No', 'Driver', 'Contact', 'License', 'Status', 'Action'].map(h => (
-                  <th key={h} className="p-3 border">{h}</th>
+                {[
+                  { name: 'Bus ID', width: '8%' },
+                  { name: 'Route', width: '20%' },
+                  { name: 'Bus No', width: '15%' },
+                  { name: 'Driver', width: '12%' },
+                  { name: 'Contact', width: '14%' },
+                  { name: 'License', width: '12%' },
+                  { name: 'Status', width: '10%' },
+                  { name: 'Action', width: '9%' }
+                ].map(col => (
+                  <th key={col.name} className="p-3 border" style={{ width: col.width }}>{col.name}</th>
                 ))}
               </tr>
             </thead>
@@ -182,12 +224,12 @@ const BusesPage = ({ buses, setBuses }) => {
               {filteredBuses.length > 0 ? (
                 filteredBuses.map((bus) => (
                   <tr key={bus.id} className="hover:bg-gray-50">
-                    <td className="p-3 border font-semibold text-blue-700">{bus.busId || '—'}</td>
-                    <td className="p-3 border">{bus.route}</td>
-                    <td className="p-3 border">{bus.busNo}</td>
-                    <td className="p-3 border">{bus.driver}</td>
-                    <td className="p-3 border">{bus.contact}</td>
-                    <td className="p-3 border">{bus.license}</td>
+                    <td className="p-3 border truncate font-semibold text-blue-700" title={bus.busId || ''}>{bus.busId || '—'}</td>
+                    <td className="p-3 border truncate" title={bus.route || ''}>{bus.route}</td>
+                    <td className="p-3 border truncate" title={bus.busNo || ''}>{bus.busNo}</td>
+                    <td className="p-3 border truncate" title={bus.driver || ''}>{bus.driver}</td>
+                    <td className="p-3 border truncate" title={bus.contact || ''}>{bus.contact}</td>
+                    <td className="p-3 border truncate" title={bus.license || ''}>{bus.license}</td>
                     <td className="p-3 border">
                       <span style={{
                         fontSize: '11px', fontWeight: 700, padding: '2px 9px',
@@ -244,7 +286,32 @@ const BusesPage = ({ buses, setBuses }) => {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-600">Route</label>
-                <input className="border p-2 rounded w-full" placeholder="ex:Katpadi" onChange={e => setFormData({ ...formData, route: e.target.value })} value={formData.route} />
+                {routesLoading ? (
+                  <div className="text-xs text-gray-500 p-2 border rounded bg-gray-50">Loading routes...</div>
+                ) : routesError ? (
+                  <div className="text-xs text-red-500 p-2 border rounded border-red-200 bg-red-50">{routesError}</div>
+                ) : (
+                  <select
+                    className="border p-2 rounded w-full bg-white text-sm"
+                    value={formData.route_id || ""}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const matchedRoute = routesList.find((r) => String(r.id) === String(selectedId));
+                      setFormData({
+                        ...formData,
+                        route_id: selectedId,
+                        route: matchedRoute ? matchedRoute.routeName : "",
+                      });
+                    }}
+                  >
+                    <option value="">-- Select Route --</option>
+                    {routesList.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.routeName}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-600">Bus No</label>

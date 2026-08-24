@@ -5,32 +5,36 @@
  *
  * Orchestrates the full GPS synchronization pipeline:
  *
- *   Every 30 seconds (configurable via GPS_POLL_INTERVAL_MS):
+ *   Every GPS_POLL_INTERVAL_MS (default 60s for demo):
  *     1. Call SkyNav API via gps.service.js
  *     2. Parse raw response via gpsParser.js
- *     3. Update Supabase buses table via gpsUpdater.js
+ *     3. UPSERT gps_telemetry via gpsUpdater.js
  *     4. Broadcast Socket.IO events via location.socket.js
  *     5. Log results via gpsLogger.js
  *
  * Features:
- *   ✅ Starts automatically when Express server starts
+ *   ✅ Starts after server is ready
  *   ✅ Graceful error recovery (one failure doesn't stop the loop)
+ *   ✅ Overlap prevention (skips cycle if previous still running)
  *   ✅ Status tracking (lastSync, syncCount, errorCount)
- *   ✅ Skips poll cycle if SkyNav credentials not configured
- *   ✅ Can be queried via GET /api/gps/status
+ *   ✅ Configurable polling interval via GPS_POLL_INTERVAL_MS
+ *   ✅ Graceful shutdown on SIGTERM/SIGINT
  * ─────────────────────────────────────────────────────────────
  */
+
+"use strict";
 
 const config = require("../config/env");
 const gpsService = require("./gps.service");
 const { parseGpsResponse } = require("./gpsParser");
-const { updateGpsCoordinates } = require("./gpsUpdater");
+const { upsertGpsTelemetry } = require("./gpsUpdater");
 const { broadcastBusLocation } = require("../sockets/location.socket");
 const gpsLogger = require("./gpsLogger");
 
 // ── Scheduler state ────────────────────────────────────────────────────────
 const state = {
   running: false,
+  syncing: false,  // Prevents overlapping sync calls
   syncCount: 0,
   errorCount: 0,
   lastSyncAt: null,
@@ -44,6 +48,13 @@ const state = {
  * Errors are caught here so the interval continues running.
  */
 async function runSyncCycle() {
+  // ── Prevent overlapping syncs ────────────────────────────────────────────
+  if (state.syncing) {
+    console.log("[GPS] ⏭️  Previous sync still running — skipping this cycle.");
+    return;
+  }
+
+  state.syncing = true;
   state.syncCount++;
   const attempt = state.syncCount;
   const cycleStart = Date.now();
@@ -51,17 +62,17 @@ async function runSyncCycle() {
   gpsLogger.logSyncStart(attempt);
 
   try {
-    // ── Step 1: Fetch raw GPS data from SkyNav ─────────────
+    // ── Step 1: Fetch raw GPS data from SkyNav ──────────────────────────
     const rawData = await gpsService.fetchGpsData();
 
     if (rawData === null) {
-      // Credentials not configured — skip this cycle silently
+      // Credentials not configured OR SkyNav returned error (e.g. rate limit)
       state.lastSyncStatus = "skipped";
       state.lastSyncAt = new Date().toISOString();
       return;
     }
 
-    // ── Step 2: Parse and validate the response ────────────
+    // ── Step 2: Parse and validate the response ─────────────────────────
     const gpsRecords = parseGpsResponse(rawData);
 
     if (gpsRecords.length === 0) {
@@ -71,29 +82,35 @@ async function runSyncCycle() {
       return;
     }
 
-    // ── Step 3: Update Supabase ────────────────────────────
-    const { updated, skipped, unknown } = await updateGpsCoordinates(gpsRecords);
+    // ── Step 3: UPSERT into gps_telemetry ──────────────────────────────
+    const { upserted, failed } = await upsertGpsTelemetry(gpsRecords, rawData);
 
-    // ── Step 4: Broadcast Socket.IO events ─────────────────
-    for (const bus of updated) {
+    // ── Step 4: Broadcast Socket.IO events ──────────────────────────────
+    for (const record of upserted) {
       broadcastBusLocation({
-        busNumber:          bus.bus_number,
-        registrationNumber: bus.registration_number,
-        latitude:           bus.latitude,
-        longitude:          bus.longitude,
-        speed:              bus.speed || 0,
-        status:             bus.status,
-        updatedAt:          bus.updated_at,
+        vehicleNumber: record.vehicleNumber,
+        latitude: record.latitude,
+        longitude: record.longitude,
+        speed: record.speed || 0,
+        rawStatus: record.rawStatus,
+        ignition: record.ignition,
+        location: record.location,
+        gpsActualTime: record.gpsActualTime,
+        receivedAt: record.receivedAt,
       });
     }
 
-    // ── Step 5: Log results ────────────────────────────────
+    // ── Step 5: Log results ─────────────────────────────────────────────
     const duration = Date.now() - cycleStart;
-    gpsLogger.logSyncSuccess(attempt, updated.length, skipped, duration);
+    gpsLogger.logSyncSuccess(attempt, upserted.length, 0, duration);
 
     state.lastSyncStatus = "success";
     state.lastSyncAt = new Date().toISOString();
     state.errorCount = 0; // Reset consecutive error count on success
+
+    if (failed > 0) {
+      console.warn(`[GPS] ⚠️  ${failed} record(s) failed to upsert`);
+    }
 
   } catch (err) {
     state.errorCount++;
@@ -101,12 +118,13 @@ async function runSyncCycle() {
     state.lastSyncAt = new Date().toISOString();
     gpsLogger.logSyncError(attempt, err);
 
-    // If there are many consecutive errors, increase log severity
     if (state.errorCount >= 5) {
       console.error(
         `[GPS] ⚠️  ${state.errorCount} consecutive GPS sync failures. Check SkyNav connectivity.`
       );
     }
+  } finally {
+    state.syncing = false;
   }
 }
 
@@ -114,8 +132,6 @@ async function runSyncCycle() {
  * startGpsScheduler
  * Starts the background polling interval.
  * Called once from server.js after the HTTP server is ready.
- *
- * @returns {void}
  */
 exports.startGpsScheduler = () => {
   if (state.running) {
@@ -126,14 +142,13 @@ exports.startGpsScheduler = () => {
   const intervalMs = config.skynav.pollIntervalMs;
 
   console.log(
-    `[GPS] Scheduler starting — polling every ${intervalMs / 1000}s ⏱️`
+    `[GPS] 📡 Scheduler starting — polling every ${intervalMs / 1000}s`
   );
 
-  // Run the first sync immediately after a short startup delay
-  // so the server finishes booting before the first SkyNav call
+  // Run the first sync after a short startup delay
   setTimeout(() => {
     runSyncCycle();
-  }, 3000); // 3-second startup grace period
+  }, 5000); // 5-second startup grace period
 
   // Schedule recurring sync
   state.intervalHandle = setInterval(runSyncCycle, intervalMs);
@@ -143,35 +158,24 @@ exports.startGpsScheduler = () => {
 /**
  * stopGpsScheduler
  * Stops the background polling interval.
- * Useful for graceful shutdown.
- *
- * @returns {void}
+ * Called on SIGTERM/SIGINT graceful shutdown.
  */
 exports.stopGpsScheduler = () => {
   if (state.intervalHandle) {
     clearInterval(state.intervalHandle);
     state.intervalHandle = null;
     state.running = false;
-    console.log("[GPS] Scheduler stopped.");
+    console.log("[GPS] 🛑 Scheduler stopped.");
   }
 };
 
 /**
  * getSchedulerStatus
  * Returns current scheduler state for the /api/gps/status endpoint.
- *
- * @returns {{
- *   running: boolean,
- *   syncCount: number,
- *   errorCount: number,
- *   lastSyncAt: string|null,
- *   lastSyncStatus: string,
- *   pollIntervalMs: number,
- *   skynavConfigured: boolean
- * }}
  */
 exports.getSchedulerStatus = () => ({
   running: state.running,
+  syncing: state.syncing,
   syncCount: state.syncCount,
   errorCount: state.errorCount,
   lastSyncAt: state.lastSyncAt,

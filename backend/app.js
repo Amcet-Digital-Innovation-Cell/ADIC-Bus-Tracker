@@ -19,17 +19,19 @@
  */
 
 const express = require("express");
-const cors    = require("cors");
+const cors = require("cors");
 
 const config = require("./config/env");
 
 const { authenticate } = require("./middleware/auth.middleware");
-const { errorHandler }  = require("./middleware/error.middleware");
-const { logger }        = require("./middleware/logger.middleware");
+const { errorHandler } = require("./middleware/error.middleware");
+const { logger } = require("./middleware/logger.middleware");
 
-const busRoutes       = require("./routes/bus.routes");
+const busRoutes = require("./routes/bus.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
-const gpsRoutes       = require("./gps/gps.routes");
+const gpsRoutes = require("./gps/gps.routes");
+const routeRoutes = require("./routes/route.routes");
+const publicRoutes = require("./routes/public.routes");
 
 const app = express();
 
@@ -38,16 +40,20 @@ const app = express();
 const parsedOrigins = config.frontendUrl === "*"
   ? "*"
   : [
-      ...config.frontendUrl.split(",").map((u) => u.trim()).filter(Boolean),
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ];
+    ...config.frontendUrl.split(",").map((u) => u.trim()).filter(Boolean),
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:8000",  // Vite dev server (current local dev port)
+    "http://127.0.0.1:8000",
+  ];
 
 const corsOptions = {
   origin: parsedOrigins,
-  methods:        ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-  credentials:    config.frontendUrl !== "*",
+  credentials: config.frontendUrl !== "*",
 };
 
 app.use(cors(corsOptions));
@@ -62,12 +68,16 @@ app.use(logger);
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message:     "AmcetTransit Bus Tracking API 🚌",
-    version:     "2.0.0",
+    message: "AmcetTransit Bus Tracking API 🚌",
+    version: "2.0.0",
     environment: config.nodeEnv,
-    timestamp:   new Date().toISOString(),
+    timestamp: new Date().toISOString(),
   });
 });
+
+// ── Public API routes ─────────────────────────────────────────────────────
+// These routes DO NOT require authentication (used by Student App).
+app.use("/api/public", publicRoutes);
 
 // ── Protected API routes ──────────────────────────────────────────────────
 // All routes below require a valid Supabase JWT in Authorization header.
@@ -77,10 +87,13 @@ app.get("/", (req, res) => {
 app.use("/api/dashboard", authenticate, dashboardRoutes);
 
 // Bus data (read + metadata update)
-app.use("/api/buses",     authenticate, busRoutes);
+app.use("/api/buses", authenticate, busRoutes);
+
+// Routes list dropdown metadata
+app.use("/api/routes", authenticate, routeRoutes);
 
 // GPS sync (manual trigger) and scheduler status
-app.use("/api/gps",       authenticate, gpsRoutes);
+app.use("/api/gps", authenticate, gpsRoutes);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {

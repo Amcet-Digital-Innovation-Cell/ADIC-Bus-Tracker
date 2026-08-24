@@ -23,21 +23,39 @@ const { supabase } = require("../config/supabase");
  * }>}
  */
 exports.getFleetStats = async () => {
-  // Fetch all buses — lightweight query (only status + updated_at needed)
-  const { data, error } = await supabase
+  // Fetch all buses
+  const { data: busesData, error: busesError } = await supabase
     .from("buses")
-    .select("status, updated_at, latitude, longitude");
+    .select("status, updated_at, registration_number");
 
-  if (error) throw error;
+  if (busesError) throw busesError;
 
-  const buses = data || [];
-  const totalBuses   = buses.length;
-  const activeBuses  = buses.filter((b) => (b.status || "").toLowerCase() === "active").length;
+  // Fetch all gps telemetry to verify if coordinates exist
+  const { data: gpsData, error: gpsError } = await supabase
+    .from("gps_telemetry")
+    .select("vehicle_number, latitude, longitude");
+
+  if (gpsError) throw gpsError;
+
+  const gpsMap = {};
+  if (gpsData) {
+    gpsData.forEach((g) => {
+      if (g.vehicle_number) {
+        gpsMap[g.vehicle_number.toUpperCase()] = g;
+      }
+    });
+  }
+
+  const buses = busesData || [];
+  const totalBuses = buses.length;
+  const activeBuses = buses.filter((b) => (b.status || "").toLowerCase() === "active").length;
   const offlineBuses = buses.filter((b) => (b.status || "").toLowerCase() === "inactive").length;
-  const pendingGps   = buses.filter((b) =>
-    (b.status || "").toLowerCase().includes("pending") ||
-    (b.latitude == null && b.longitude == null)
-  ).length;
+  const pendingGps = buses.filter((b) => {
+    const isPending = (b.status || "").toLowerCase().includes("pending");
+    const gpsItem = gpsMap[(b.registration_number || "").toUpperCase()];
+    const hasGps = gpsItem && gpsItem.latitude != null && gpsItem.longitude != null;
+    return isPending || !hasGps;
+  }).length;
 
   // Find the most recent GPS update across the fleet
   const timestamps = buses

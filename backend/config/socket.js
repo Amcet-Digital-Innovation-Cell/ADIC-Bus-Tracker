@@ -44,7 +44,7 @@ function initSocket(httpServer) {
   io.on("connection", (socket) => {
     console.log(`[Socket.IO] Client connected   id=${socket.id}`);
 
-    // Clients can join a named room (e.g. "bus:42") for targeted events
+    // Clients can join bus rooms by bus ID or vehicle number
     socket.on("joinBus", (busId) => {
       socket.join(`bus:${busId}`);
       console.log(`[Socket.IO] Socket ${socket.id} joined room bus:${busId}`);
@@ -52,6 +52,16 @@ function initSocket(httpServer) {
 
     socket.on("leaveBus", (busId) => {
       socket.leave(`bus:${busId}`);
+    });
+
+    // Join by vehicle number (for GPS telemetry updates from gps_telemetry)
+    socket.on("joinVehicle", (vehicleNumber) => {
+      socket.join(`vehicle:${vehicleNumber}`);
+      console.log(`[Socket.IO] Socket ${socket.id} joined room vehicle:${vehicleNumber}`);
+    });
+
+    socket.on("leaveVehicle", (vehicleNumber) => {
+      socket.leave(`vehicle:${vehicleNumber}`);
     });
 
     socket.on("disconnect", (reason) => {

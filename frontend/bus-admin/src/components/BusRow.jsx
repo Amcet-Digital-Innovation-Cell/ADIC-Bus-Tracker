@@ -11,8 +11,15 @@ const STATUS_CONFIG = {
   'Pending (GPS)': { color: '#e28743', bg: '#fffaf0', label: 'Pending (GPS)' },
 };
 
+// GPS status badge config — separate from bus operational status
+const GPS_STATUS_CONFIG = {
+  Online:  { color: '#2d9e5f', bg: '#f0fff4', label: '● Online' },
+  Pending: { color: '#e28743', bg: '#fffaf0', label: '◎ Pending' },
+};
+
 export default function BusRow({ bus, isSelected, onClick }) {
   const cfg = STATUS_CONFIG[bus.status] ?? STATUS_CONFIG.Inactive;
+  const gpsCfg = GPS_STATUS_CONFIG[bus.gpsStatus] ?? GPS_STATUS_CONFIG.Pending;
   const busIdDisplay = bus.busId || (bus.route && /^\d+-/.test(bus.route) ? bus.route.split('-')[0] : null) || (bus.id && String(bus.id).length < 5 ? bus.id : bus.busNo);
 
   return (
@@ -30,9 +37,9 @@ export default function BusRow({ bus, isSelected, onClick }) {
       </span>
       <span
         className="bus-row__status"
-        style={{ color: cfg.color, background: cfg.bg }}
+        style={{ color: gpsCfg.color, background: gpsCfg.bg }}
       >
-        {cfg.label}
+        {gpsCfg.label}
       </span>
     </div>
   );

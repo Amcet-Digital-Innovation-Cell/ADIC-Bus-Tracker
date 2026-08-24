@@ -53,10 +53,10 @@ function parseCoordinate(value, type) {
 }
 
 // ── Status normalizer ─────────────────────────────────────────────────────────
-// SkyNav Status field values: "Moving", "Stopped", "Idle", "Offline", "No Signal"
+// SkyNav Status field values: "Moving", "Stopped", "Idle", "Offline", "No Signal", "INACTIVE", "ACTIVE"
 function mapStatus(skynavStatus) {
   const s = String(skynavStatus || "").toLowerCase().trim();
-  if (s === "moving" || s === "running") return "active";
+  if (s === "moving" || s === "running" || s === "active") return "active";
   return "inactive";
 }
 
@@ -93,28 +93,37 @@ exports.parseGpsResponse = (rawResponse) => {
 
   // ── Step 2: Navigate to VehicleData array ─────────────────────────────────
   // Official SkyNav response shape: { root: { VehicleData: [...] } }
-  // Also handle flat array or error shapes gracefully.
+  // Edge case: some PHP JSON APIs return a single object instead of a 1-item
+  // array when there's only one vehicle — wrap in array if needed.
   let records;
 
-  if (rawResponse.root && Array.isArray(rawResponse.root.VehicleData)) {
-    // ✅ Official SkyNav format
-    records = rawResponse.root.VehicleData;
-  } else if (Array.isArray(rawResponse.VehicleData)) {
-    // Fallback: root skipped
-    records = rawResponse.VehicleData;
-  } else if (Array.isArray(rawResponse.data)) {
-    // Fallback: generic { data: [...] } shape
-    records = rawResponse.data;
-  } else if (Array.isArray(rawResponse)) {
-    // Fallback: bare array
-    records = rawResponse;
+  const vehicleData = rawResponse?.root?.VehicleData
+    ?? rawResponse?.VehicleData
+    ?? rawResponse?.data
+    ?? null;
+
+  if (vehicleData === null) {
+    // Could also be a bare array
+    if (Array.isArray(rawResponse)) {
+      records = rawResponse;
+    } else {
+      gpsLogger.logParseWarning(
+        "response.root.VehicleData",
+        `Could not find VehicleData array. Keys found: [${Object.keys(rawResponse).join(", ")}]`
+      );
+      return [];
+    }
+  } else if (Array.isArray(vehicleData)) {
+    // ✅ Normal case — array of vehicle objects
+    records = vehicleData;
+  } else if (vehicleData && typeof vehicleData === "object") {
+    // Edge case: single vehicle returned as object, not array
+    records = [vehicleData];
   } else {
-    gpsLogger.logParseWarning(
-      "response.root.VehicleData",
-      `Could not find VehicleData array. Keys found: [${Object.keys(rawResponse).join(", ")}]`
-    );
+    gpsLogger.logParseWarning("VehicleData", `Unexpected type: ${typeof vehicleData}`);
     return [];
   }
+
 
   if (records.length === 0) {
     gpsLogger.logParseWarning("VehicleData", "Array is empty — no devices returned");
@@ -186,7 +195,9 @@ exports.parseGpsResponse = (rawResponse) => {
     const rawStatus    = String(record.Status    || record.status    || "").trim();
     const speed        = parseFloat(record.Speed  || record.speed    || 0) || 0;
     const odometer     = parseFloat(record.Odometer || record.odometer || 0) || 0;
-    const ignition     = (record.IGN === "1" || record.IGN === 1 || record.ignition === true);
+    // IGN: SkyNav returns "ON"/"OFF" strings (or "1"/"0" on some devices)
+    const ignRaw = String(record.IGN || record.ignition || "").toUpperCase().trim();
+    const ignition = (ignRaw === "ON" || ignRaw === "1" || ignRaw === "TRUE");
 
     // Timestamps
     const gpsActualTime = String(
