@@ -1,11 +1,12 @@
 {
   "name": "bus-tracking-backend",
-  "version": "2.0.0",
-  "description": "AmcetTransit Bus Tracking — Production Backend",
+  "version": "2.1.0",
+  "description": "AmcetTransit Bus Tracking — Unified Backend (SkyNav + Real-Time GPS)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "simulate": "node tracker.js"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.4",
+    "axios": "^1.19.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

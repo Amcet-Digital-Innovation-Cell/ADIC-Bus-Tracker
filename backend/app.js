@@ -32,6 +32,8 @@ const dashboardRoutes = require("./routes/dashboard.routes");
 const gpsRoutes = require("./gps/gps.routes");
 const routeRoutes = require("./routes/route.routes");
 const publicRoutes = require("./routes/public.routes");
+const realtimeGpsRoutes = require("./routes/realtimeGps.routes");
+const traccarRoutes = require("./routes/traccar.routes");
 
 const app = express();
 
@@ -64,12 +66,16 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
+// ── Public routes (no auth required) ─────────────────────────────────────
+// Traccar webhook must be public — GPS hardware cannot send a user JWT.
+app.use("/traccar/webhook", traccarRoutes);
+
 // ── Health check (public) ─────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "AmcetTransit Bus Tracking API 🚌",
-    version: "2.0.0",
+    version: "2.1.0",
     environment: config.nodeEnv,
     timestamp: new Date().toISOString(),
   });
@@ -94,6 +100,9 @@ app.use("/api/routes", authenticate, routeRoutes);
 
 // GPS sync (manual trigger) and scheduler status
 app.use("/api/gps", authenticate, gpsRoutes);
+
+// Real-time device GPS push endpoints (direct device → server)
+app.use("/api/realtime/gps", authenticate, realtimeGpsRoutes);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {
