@@ -7,13 +7,8 @@
  * It does NOT start the HTTP server (that's server.js).
  *
  * Route Architecture:
- *   Public:    POST /traccar/webhook  (hardware GPS device, no JWT)
- *   Protected: all /api/* routes require a valid Supabase JWT
- *
- * Merged from real time/Bus-tracking1-SKR:
- *   ✅ /api/realtime/gps/*  — raw device GPS push endpoints
- *   ✅ /traccar/webhook     — Traccar GPS server webhook (public)
- *   ✅ tracker.js           — GPS simulator (dev tool, run separately)
+ *   Public:    none (auth is handled entirely by Supabase on the frontend)
+ *   Protected: all API routes require a valid Supabase JWT
  *
  * Removed from original:
  *   ❌ /api/auth  — frontend authenticates directly with Supabase
@@ -24,31 +19,41 @@
  */
 
 const express = require("express");
-const cors    = require("cors");
+const cors = require("cors");
 
 const config = require("./config/env");
 
 const { authenticate } = require("./middleware/auth.middleware");
-const { errorHandler }  = require("./middleware/error.middleware");
-const { logger }        = require("./middleware/logger.middleware");
+const { errorHandler } = require("./middleware/error.middleware");
+const { logger } = require("./middleware/logger.middleware");
 
-const busRoutes          = require("./routes/bus.routes");
-const dashboardRoutes    = require("./routes/dashboard.routes");
-const gpsRoutes          = require("./gps/gps.routes");
-const realtimeGpsRoutes  = require("./routes/realtimeGps.routes");
-const traccarRoutes      = require("./routes/traccar.routes");
+const busRoutes = require("./routes/bus.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
+const gpsRoutes = require("./gps/gps.routes");
+const routeRoutes = require("./routes/route.routes");
+const publicRoutes = require("./routes/public.routes");
+const realtimeGpsRoutes = require("./routes/realtimeGps.routes");
+const traccarRoutes = require("./routes/traccar.routes");
 
 const app = express();
 
-// ── CORS ──────────────────────────────────────────────────────────────────
-// Allow requests from the configured frontend URL.
-// In production set FRONTEND_URL=https://your-app.vercel.app in Render.
-// During development, defaults to '*' so local Vite dev server works.
+// Parse FRONTEND_URL — supports comma-separated values for multiple domains
+// e.g. FRONTEND_URL=https://bus-transit-indol.vercel.app,https://old-app.vercel.app
+const parsedOrigins = config.frontendUrl === "*"
+  ? "*"
+  : [
+    ...config.frontendUrl.split(",").map((u) => u.trim()).filter(Boolean),
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:8000",  // Vite dev server (current local dev port)
+    "http://127.0.0.1:8000",
+  ];
+
 const corsOptions = {
-  origin: config.frontendUrl === "*"
-    ? "*"
-    : [config.frontendUrl, "http://localhost:5173", "http://localhost:3000"],
-  methods:     ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  origin: parsedOrigins,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: config.frontendUrl !== "*",
 };
@@ -69,12 +74,16 @@ app.use("/traccar/webhook", traccarRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message:     "AmcetTransit Bus Tracking API 🚌",
-    version:     "2.0.0",
+    message: "AmcetTransit Bus Tracking API 🚌",
+    version: "2.1.0",
     environment: config.nodeEnv,
-    timestamp:   new Date().toISOString(),
+    timestamp: new Date().toISOString(),
   });
 });
+
+// ── Public API routes ─────────────────────────────────────────────────────
+// These routes DO NOT require authentication (used by Student App).
+app.use("/api/public", publicRoutes);
 
 // ── Protected API routes ──────────────────────────────────────────────────
 // All routes below require a valid Supabase JWT in Authorization header.
@@ -84,14 +93,16 @@ app.get("/", (req, res) => {
 app.use("/api/dashboard", authenticate, dashboardRoutes);
 
 // Bus data (read + metadata update)
-app.use("/api/buses",            authenticate, busRoutes);
+app.use("/api/buses", authenticate, busRoutes);
 
-// GPS sync (manual trigger, SkyNav scheduler) and scheduler status
-app.use("/api/gps",              authenticate, gpsRoutes);
+// Routes list dropdown metadata
+app.use("/api/routes", authenticate, routeRoutes);
+
+// GPS sync (manual trigger) and scheduler status
+app.use("/api/gps", authenticate, gpsRoutes);
 
 // Real-time device GPS push endpoints (direct device → server)
-// Includes: POST /update, GET /live, GET /history, GET /history/db, DELETE /history
-app.use("/api/realtime/gps",     authenticate, realtimeGpsRoutes);
+app.use("/api/realtime/gps", authenticate, realtimeGpsRoutes);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {

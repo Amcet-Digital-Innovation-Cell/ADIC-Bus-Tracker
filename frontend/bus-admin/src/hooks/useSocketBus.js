@@ -5,66 +5,50 @@
  *
  * Responsibilities:
  *   1. Connect to the backend Socket.IO server
- *   2. Listen for 'busLocationUpdated' events
- *   3. Merge incoming GPS data into the local buses state
+ *   2. Listen for 'busLocationUpdated' events (vehicleNumber-based)
+ *   3. Merge incoming GPS telemetry into the local buses state
+ *      using vehicle_number / registration_number matching
  *   4. Run client-side LINEAR INTERPOLATION every 200ms
- *      to smoothly animate bus markers between 30-second
- *      GPS packets (eliminates jumping/teleporting markers)
+ *      to smoothly animate bus markers between GPS packets
  *   5. Disconnect cleanly when the component unmounts
  *
- * ─────────────────────────────────────────────────────────────
- * SMOOTH GPS MOVEMENT EXPLAINED:
- *
- * SkyNav sends a new GPS position every 30 seconds.
- * Updating the map marker every 30s causes an abrupt jump.
- *
- * Solution: client-side interpolation
- *   - Store the PREVIOUS position and the NEW target position
- *   - Every 200ms, compute an intermediate position:
- *       t = elapsed / 30000  (0.0 → 1.0 over 30 seconds)
- *       interpLat = prevLat + (newLat - prevLat) * t
- *       interpLng = prevLng + (newLng - prevLng) * t
- *   - Move the marker to the interpolated position
- *   - This creates smooth, continuous movement
+ * IMPORTANT: GPS data comes from gps_telemetry (via backend), NOT
+ * directly from SkyNav. The Socket.IO event payload is emitted by
+ * gpsScheduler.js after each successful UPSERT to gps_telemetry.
  * ─────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://bus-tracking-zbon.onrender.com";
-const INTERPOLATION_INTERVAL_MS = 200;   // How often to update interpolated position
-const GPS_PACKET_INTERVAL_MS    = 30000; // Expected interval between SkyNav packets
+const API_BASE = import.meta.env.VITE_API_URL || "https://bustransit-g4ks.onrender.com";
+const INTERPOLATION_INTERVAL_MS = 200;
+const GPS_PACKET_INTERVAL_MS = 60000; // Match GPS_POLL_INTERVAL_MS in backend
 
 /**
  * useSocketBus
  *
  * @param {object[]} initialBuses - The initial bus array from /api/buses
- * @param {string|null} authToken  - Supabase access token (used for auth if needed)
+ * @param {string|null} authToken  - Supabase access token
  * @returns {{
  *   buses: object[],         // Interpolated bus positions (use this for the map)
  *   connected: boolean,      // Socket.IO connection status
- *   updateCount: number      // Number of GPS updates received (for debugging)
+ *   updateCount: number      // Number of GPS updates received
  * }}
  */
 export function useSocketBus(initialBuses, authToken) {
-  // The "live" buses state — updated by socket events
   const [liveBuses, setLiveBuses] = useState(initialBuses);
-
-  // The "smoothed" buses state — updated by interpolation ticker
   const [buses, setBuses] = useState(initialBuses);
-
-  const [connected, setConnected]     = useState(false);
+  const [connected, setConnected] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
 
-  // Store previous positions for interpolation calculation
-  // Map: busNumber → { prevLat, prevLng, newLat, newLng, startTime }
+  // Store previous positions for interpolation
+  // Map: vehicleNumber → { prevLat, prevLng, newLat, newLng, startTime }
   const interpolationRef = useRef({});
-  const intervalRef      = useRef(null);
-  const socketRef        = useRef(null);
+  const intervalRef = useRef(null);
+  const socketRef = useRef(null);
 
-  // ── Sync initialBuses changes into liveBuses ─────────────────────────────
-  // This handles the initial load from /api/buses
+  // ── Sync initialBuses changes into liveBuses ──────────────────────────────
   useEffect(() => {
     setLiveBuses(initialBuses);
     setBuses(initialBuses);
@@ -92,44 +76,78 @@ export function useSocketBus(initialBuses, authToken) {
       setConnected(false);
     });
 
-    // ── Handle incoming GPS update ────────────────────────────────────────
+    // ── Handle incoming GPS update from gps_telemetry pipeline ────────────
+    // Payload fields: vehicleNumber, latitude, longitude, speed,
+    //                 rawStatus, ignition, location, gpsActualTime, receivedAt
     socket.on("busLocationUpdated", (payload) => {
-      const { busNumber, latitude, longitude, status, updatedAt } = payload;
+      const {
+        vehicleNumber,
+        latitude,
+        longitude,
+        speed,
+        rawStatus,
+        ignition,
+        location,
+        gpsActualTime,
+        receivedAt,
+      } = payload;
+
+      if (!vehicleNumber || latitude == null || longitude == null) return;
 
       setUpdateCount((c) => c + 1);
+      console.log(
+        `[Socket.IO] busLocationUpdated | vehicle=${vehicleNumber} ` +
+        `lat=${latitude} lng=${longitude} ignition=${ignition}`
+      );
 
-      // Update the live buses state with the new GPS position
+      // ── Derive GPS status ─────────────────────────────────────────────
+      // "Online"  → GPS is reporting valid coordinates AND ignition is ON
+      // "Pending" → ignition is OFF or GPS signal is absent
+      const ignitionOn = String(ignition || "").toUpperCase() === "ON";
+      const gpsStatus = ignitionOn ? "Online" : "Pending";
+
       setLiveBuses((prev) => {
-        const updated = prev.map((bus) => {
-          if (bus.bus_number !== busNumber && bus.busId !== busNumber) return bus;
+        return prev.map((bus) => {
+          // Match by registration_number (our buses table) or busNo
+          const busRegNo = (bus.registration_number || bus.busNo || "").toUpperCase();
+          if (busRegNo !== vehicleNumber.toUpperCase()) return bus;
 
-          // Record previous and new positions for interpolation
+          // Record positions for smooth interpolation
           const prevLat = bus._interpLat ?? bus.latitude;
           const prevLng = bus._interpLng ?? bus.longitude;
 
-          interpolationRef.current[busNumber] = {
+          interpolationRef.current[vehicleNumber] = {
             prevLat: prevLat ?? latitude,
             prevLng: prevLng ?? longitude,
-            newLat:  latitude,
-            newLng:  longitude,
+            newLat: latitude,
+            newLng: longitude,
             startTime: Date.now(),
           };
+
+          // Derive normalized status from rawStatus
+          const normalizedStatus = (rawStatus || "").toUpperCase() === "RUNNING" ||
+            (rawStatus || "").toUpperCase() === "MOVING"
+            ? "active"
+            : "inactive";
 
           return {
             ...bus,
             latitude,
             longitude,
-            status,
-            updated_at: updatedAt,
+            status: normalizedStatus,
+            speed,
+            ignition,
+            gpsStatus,           // ← "Online" | "Pending"
+            location_address: location,
+            gps_actual_time: gpsActualTime,
+            received_at: receivedAt,
             _interpLat: prevLat ?? latitude,
             _interpLng: prevLng ?? longitude,
           };
         });
-        return updated;
       });
     });
 
-    // ── Cleanup on unmount ────────────────────────────────────────────────
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -137,13 +155,11 @@ export function useSocketBus(initialBuses, authToken) {
   }, []);
 
   // ── Interpolation ticker ──────────────────────────────────────────────────
-  // Runs every 200ms to compute intermediate bus positions
   useEffect(() => {
     intervalRef.current = setInterval(() => {
       const now = Date.now();
       const interp = interpolationRef.current;
 
-      // Only update state if there are active interpolations
       const hasActive = Object.values(interp).some(
         (entry) => now - entry.startTime < GPS_PACKET_INTERVAL_MS
       );
@@ -152,7 +168,7 @@ export function useSocketBus(initialBuses, authToken) {
 
       setBuses((prev) =>
         prev.map((bus) => {
-          const key = bus.bus_number || bus.busId;
+          const key = (bus.registration_number || bus.busNo || "").toUpperCase();
           const entry = interp[key];
 
           if (!entry) return bus;
@@ -160,7 +176,6 @@ export function useSocketBus(initialBuses, authToken) {
           const elapsed = now - entry.startTime;
           const t = Math.min(elapsed / GPS_PACKET_INTERVAL_MS, 1.0);
 
-          // Linear interpolation formula: a + (b - a) * t
           const interpLat = entry.prevLat + (entry.newLat - entry.prevLat) * t;
           const interpLng = entry.prevLng + (entry.newLng - entry.prevLng) * t;
 
@@ -179,12 +194,10 @@ export function useSocketBus(initialBuses, authToken) {
   }, []);
 
   // ── Return smoothed buses ─────────────────────────────────────────────────
-  // The map should render _interpLat/_interpLng when available,
-  // falling back to actual latitude/longitude.
   const displayBuses = buses.map((bus) => ({
     ...bus,
-    latitude:  bus._interpLat  ?? bus.latitude,
-    longitude: bus._interpLng  ?? bus.longitude,
+    latitude: bus._interpLat ?? bus.latitude,
+    longitude: bus._interpLng ?? bus.longitude,
   }));
 
   return { buses: displayBuses, connected, updateCount };

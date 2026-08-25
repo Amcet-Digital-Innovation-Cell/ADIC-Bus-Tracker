@@ -1,0 +1,256 @@
+SkyNav API Documentation
+SkyNav API
+Documentation
+Device Data and Device History APIs
+User understanding guide for API integration, testing, and troubleshooting
+Security note: Real bearer tokens, passwords, and device identifiers from the uploaded Postman collection are not printed in
+this document. Use the placeholders shown in each example.
+Generated from Postman collection - sanitized for user documentation
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+Table of Contents
+ 1. Overview
+ 2. Authentication and Common Request Rules
+ 3. Endpoint: Get Device Data
+ 4. Endpoint: Get Device History
+ 5. Response Field Guide
+ 6. Error Handling and Troubleshooting
+ 7. Developer Checklist
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+1. Overview
+This document explains how to call the SkyNav APIs available in the uploaded Postman collection. It is written for 
+customers, support teams, and developers who need a clear understanding of the request method, required parameters, 
+authorization, expected output, and common issues.
+Item Details
+Collection name SkyNav API
+Base URL https://api.skynavgps.com/v2
+Available APIs Get Device Data, Get Device History
+Request method in collection POST
+Request body type form-data / multipart-form-data
+Response format JSON
+Important: The uploaded collection has a written description mentioning GET for device data, but the actual Postman request
+method is POST. This documentation follows the actual request method configured in the collection.
+2. Authentication and Common Request Rules
+Each API request uses a bearer authorization token and form-data credentials. The token and password values must be 
+kept private and should not be hard-coded in frontend applications.
+Header Required Description Example
+Authorization Yes Bearer token used to authorize
+the API request. Bearer <BEARER_TOKEN>
+Content-Type Usually automatic in Postman
+Postman sets this 
+automatically for form-data. 
+For cURL, let cURL set 
+multipart boundaries.
+multipart/form-data
+Common Form-Data Body Parameters
+Parameter Required Type Description Example
+username Yes string
+Registered SkyNav 
+username for the 
+customer/account.
+<USERNAME>
+password Yes string Password for the given 
+SkyNav user account. <PASSWORD>
+projectId Yes number/string Project ID assigned to 
+the customer/project. <PROJECT_ID>
+companyName Yes string
+Company name 
+mapped with the 
+SkyNav account.
+<COMPANY_NAME>
+Postman Setup
+1. Select request method as POST.
+2. Open the Authorization tab, choose Bearer Token, and enter the token value.
+3. Open the Body tab, choose form-data, and add username, password, projectId, and companyName.
+4. Pass query parameters in the URL, such as imei, start_datetime, and end_datetime.
+5. Click Send and verify that the response content type is JSON.
+3. Endpoint: Get Device Data
+This endpoint returns the current/latest vehicle and device data for one or more IMEI numbers. Use it when you need live 
+vehicle location, speed, status, ignition, GPS status, and related device details.
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+Property Value
+API name Get Device Data
+Method POST
+Endpoint https://api.skynavgps.com/v2/devices/
+Response JSON
+Query Parameters
+Parameter Required Type Description Example
+imei Yes string
+One IMEI number or 
+multiple comma￾separated IMEI 
+numbers.
+<IMEI_1>,<IMEI_2>
+Sample Request URL
+POST https://api.skynavgps.com/v2/devices/?imei=<IMEI_1>,<IMEI_2>
+Sample cURL
+curl --location --request POST 'https://api.skynavgps.com/v2/devices/?imei=<IMEI_1>,<IMEI_2>' \
+ --header 'Authorization: Bearer <BEARER_TOKEN>' \
+ --form 'username="<USERNAME>"' \
+ --form 'password="<PASSWORD>"' \
+ --form 'projectId="<PROJECT_ID>"' \
+ --form 'companyName="<COMPANY_NAME>"'
+Successful Response Structure
+{
+ "root": {
+ "VehicleData": [
+ {
+ "Vehicle_Name": "...",
+ "Company": "...",
+ "Vehicle_No": "...",
+ "Imeino": "...",
+ "Latitude": "...",
+ "Longitude": "...",
+ "Speed": "...",
+ "Status": "...",
+ "GPSActualTime": "...",
+ "Datetime": "...",
+ "Location": "...",
+ "IGN": "...",
+ "AC": "...",
+ "Odometer": "..."
+ }
+ ]
+ }
+}
+4. Endpoint: Get Device History
+This endpoint returns historical movement or travel data for a device within a given date-time range. Use it for route 
+playback, trip review, distance and speed analysis, and audit reports.
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+Property Value
+API name Get Device History
+Method POST
+Endpoint https://api.skynavgps.com/v2/history/
+Response JSON
+Query Parameters
+Parameter Required Type Description Example
+imei Yes string
+IMEI number of the 
+device for which history 
+is required.
+<IMEI>
+start_datetime Yes string
+History start date and 
+time. Use the same 
+date format as 
+configured in the 
+collection.
+DD-MM-YYYY 
+HH:mm:ss
+end_datetime Yes string
+History end date and 
+time. It should be 
+greater than 
+start_datetime.
+DD-MM-YYYY 
+HH:mm:ss
+Date format: The collection uses DD-MM-YYYY HH:mm:ss, for example 07-07-2026 08:56:43. Encode spaces in URLs as 
+%20 when manually building the URL.
+Sample Request URL
+POST https://api.skynavgps.com/v2/history/?imei=<IMEI>&start_datetime=07-07-
+2026%2008:56:43&end_datetime=07-07-2026%2023:56:43
+Sample cURL
+curl --location --request POST 'https://api.skynavgps.com/v2/history/?imei=<IMEI>&start_datetime=07-
+07-2026%2008:56:43&end_datetime=07-07-2026%2023:56:43' \
+ --header 'Authorization: Bearer <BEARER_TOKEN>' \
+ --form 'username="<USERNAME>"' \
+ --form 'password="<PASSWORD>"' \
+ --form 'projectId="<PROJECT_ID>"' \
+ --form 'companyName="<COMPANY_NAME>"'
+Expected Response
+The uploaded Postman collection does not include an example response for the history endpoint. The response should 
+be validated with a live request. In general, history APIs return an array/list of GPS points with location, speed, 
+timestamp, and movement status details.
+{
+ "status": true,
+ "data": [
+ {
+ "imei": "<IMEI>",
+ "latitude": "...",
+ "longitude": "...",
+ "speed": "...",
+ "received_time": "...",
+ "movement_status": "...",
+ "address": "..."
+ }
+ ]
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+}
+Note: The sample above is a user-friendly representation. Confirm the exact response fields from the live API before binding 
+it to production code.
+5. Response Field Guide
+The live device data response contains many fields. The table below explains the commonly used fields for application 
+integration.
+Field Meaning Usage
+Vehicle_Name Display name of the vehicle/device. Show vehicle name in dashboard.
+Vehicle_No Registered vehicle number. Vehicle identification and search.
+Imeino Device IMEI number. Device mapping and API filtering.
+Latitude / Longitude Current GPS coordinates. Show marker on map.
+Speed Current vehicle speed. Movement/status display.
+Status Vehicle/device operational status. Running/stopped/idle status logic.
+GPSActualTime GPS packet time from the device. Use for last GPS update time.
+Datetime Processed date-time value from API. Use for reports and display.
+Location Resolved address or location string. Show user-readable place name.
+IGN Ignition status. Determine vehicle ON/OFF.
+AC AC status where applicable. Optional vehicle telemetry.
+Odometer Odometer reading. Distance tracking and reports.
+Fuel Fuel data array if available. Fuel analytics when supported.
+battery_percentage Device battery percentage. Device health monitoring.
+ExternalVolt External voltage value. Power monitoring.
+6. Error Handling and Troubleshooting
+HTTP Status / Issue Meaning Recommended Action
+200 OK with JSON Request successful. Parse the JSON response and validate 
+expected fields.
+200 OK but empty response API accepted the request but returned no 
+data, or upstream response is empty.
+Check IMEI, date range, credentials, 
+config/project mapping, and cURL errors.
+400 Bad Request Required parameter missing or invalid. Verify imei, start_datetime, end_datetime, 
+and body fields.
+401 Unauthorized Authorization header missing or invalid. Send Authorization: Bearer 
+<BEARER_TOKEN>.
+403 Forbidden / Access Denied Server understood request but rejected 
+authorization.
+Check token validity, account access, 
+project/company mapping, and endpoint 
+permission.
+500 Internal Server Error Server-side issue or integration code 
+error.
+Enable server error logs, check missing 
+semicolons/undefined variables, and 
+inspect cURL response.
+Common Integration Mistakes
+ Sending raw JSON body while backend code expects form-data or $_POST.
+ Missing semicolon or undefined variables in PHP integration code.
+ Using an expired or incorrect bearer token.
+ Passing date-time with spaces that are not URL encoded.
+ Using the wrong HTTP method compared with the configured endpoint.
+ Forgetting that multiple IMEI numbers must be comma-separated without extra spaces.
+ Logging or exposing real passwords, tokens, or IMEI values in public documentation or frontend code.
+SkyNav API Documentation
+Generated from Postman collection - sanitized for user documentation
+7. Developer Checklist
+6. Confirm the base URL is https://api.skynavgps.com/v2.
+7. Use POST for both APIs as configured in the Postman collection.
+8. Pass Authorization as Bearer token.
+9. Pass username, password, projectId, and companyName as form-data.
+10. Pass imei as a query parameter. For multiple devices, use comma-separated IMEI values.
+11. For history, pass start_datetime and end_datetime in DD-MM-YYYY HH:mm:ss format.
+12. URL encode date-time spaces when calling the API outside Postman.
+13. Do not expose tokens, passwords, or IMEI numbers in frontend code or user-facing logs.
+14. Handle 200-empty, 401, 403, and 500 responses clearly in the application.
+15. Validate the exact response schema with live API output before final deployment.
+Appendix: Safe Placeholder Reference
+Placeholder Replace With
+<BEARER_TOKEN> API bearer token provided by administrator.
+<USERNAME> SkyNav account username.
+<PASSWORD> SkyNav account password.
+<PROJECT_ID> Project ID assigned to the account.
+<COMPANY_NAME> Company name mapped with the account.
+<IMEI> Single device IMEI number.
+<IMEI_1>,<IMEI_2> Multiple comma-separated IMEI numbers.
+Final recommendation: For production integrations, store credentials and bearer tokens in secure server-side configuration 
+or environment variables. Never store them in mobile apps, JavaScript files, or shared documents.

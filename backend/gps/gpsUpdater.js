@@ -1,46 +1,38 @@
 /**
  * gps/gpsUpdater.js
  * ─────────────────────────────────────────────────────────────
- * Supabase GPS coordinate updater.
+ * Supabase GPS telemetry updater.
  *
- * Takes parsed GPS records and writes them to the buses table.
+ * Takes parsed GPS records and UPSERTs them into gps_telemetry.
  *
- * STRICT RULES (enforced in code):
- *   ✅ UPDATE only  — latitude, longitude, status, updated_at
- *   ❌ INSERT never — buses are pre-seeded, never created here
- *   ❌ DELETE never — buses are never deleted by the GPS pipeline
+ * STRICT RULES:
+ *   ✅ UPSERT — one current row per vehicle_number (UNIQUE)
+ *   ❌ Never insert duplicate rows for the same vehicle
+ *   ❌ Never touch the buses table for GPS data
  *
- * MATCHING STRATEGY:
- *   1. Try to match by registration_number (vehicleNumber from SkyNav)
- *   2. If no match, try by IMEI (stored in a future buses.imei column)
- *   3. If still no match, log a warning and skip (unknown device)
+ * TABLE: gps_telemetry
+ * UNIQUE CONFLICT COLUMN: vehicle_number
  *
- * DEDUPLICATION:
- *   If the new coordinates are identical to the stored coordinates
- *   (within 6 decimal places), skip the update to avoid redundant
- *   Supabase writes and Socket.IO noise.
+ * Behavior:
+ *   First GPS reading for TN11BE7456  → INSERT
+ *   Second GPS reading for TN11BE7456 → UPDATE same row
+ *   Result: ONE current-state row per vehicle at all times
  * ─────────────────────────────────────────────────────────────
  */
 
-const { supabase, adminSupabase } = require("../config/supabase");
+"use strict";
+
+const { adminSupabase, supabase } = require("../config/supabase");
 const gpsLogger = require("./gpsLogger");
 
-/** Use the admin client for writes (bypasses RLS) */
+/** Use admin client (bypasses RLS) when available */
 const writeClient = () => adminSupabase || supabase;
 
 /**
- * Rounds a coordinate to 6 decimal places for comparison.
- * ~11cm precision — sufficient for bus tracking deduplication.
- *
- * @param {number} coord
- * @returns {number}
- */
-const round6 = (coord) => Math.round(coord * 1e6) / 1e6;
-
-/**
- * updateGpsCoordinates
- * Main updater function. Takes an array of parsed GPS records,
- * matches them to buses, and performs UPDATE queries.
+ * upsertGpsTelemetry
+ * ─────────────────────────────────────────────────────────────
+ * Writes an array of parsed GPS records to gps_telemetry.
+ * Uses PostgreSQL UPSERT (INSERT … ON CONFLICT DO UPDATE).
  *
  * @param {Array<{
  *   vehicleNumber: string,
@@ -48,103 +40,122 @@ const round6 = (coord) => Math.round(coord * 1e6) / 1e6;
  *   latitude: number,
  *   longitude: number,
  *   speed: number,
- *   status: string,
- *   gpsActualTime: string
- * }>} gpsRecords
+ *   rawStatus: string,
+ *   ignition: boolean | string,
+ *   location: string,
+ *   gpsActualTime: string,
+ *   rawPayload?: object
+ * }>} gpsRecords - Parsed GPS records from gpsParser.js
+ *
+ * @param {object} [rawPayload] - The original raw SkyNav response
  *
  * @returns {Promise<{
- *   updated: Array<object>,   // Buses that were updated in Supabase
- *   skipped: number,          // Buses skipped due to no coordinate change
- *   unknown: number           // Records that couldn't be matched to a bus
+ *   upserted: Array<object>,   // Rows successfully written to Supabase
+ *   failed:   number           // Records that failed to upsert
  * }>}
  */
-exports.updateGpsCoordinates = async (gpsRecords) => {
+exports.upsertGpsTelemetry = async (gpsRecords, rawPayload = null) => {
   if (!gpsRecords || gpsRecords.length === 0) {
-    return { updated: [], skipped: 0, unknown: 0 };
+    return { upserted: [], failed: 0 };
   }
 
-  // ── Step 1: Load current bus data for comparison ───────────
-  const { data: allBuses, error: fetchError } = await supabase
-    .from("buses")
-    .select("id, bus_number, registration_number, latitude, longitude");
+  const upserted = [];
+  let failed = 0;
+  const receivedAt = new Date().toISOString();
 
-  if (fetchError) {
-    throw new Error(`Failed to fetch buses for GPS update: ${fetchError.message}`);
-  }
-
-  const buses = allBuses || [];
-  const updated = [];
-  let skipped = 0;
-  let unknown = 0;
-
-  // ── Step 2: Process each GPS record ───────────────────────
   for (const record of gpsRecords) {
-    // Find matching bus by registration_number or bus_number
-    let bus = buses.find(
-      (b) =>
-        b.registration_number &&
-        record.vehicleNumber &&
-        b.registration_number.replace(/\s/g, "").toUpperCase() ===
-          record.vehicleNumber.replace(/\s/g, "").toUpperCase()
-    );
-
-    // Fallback: match by bus_number
-    if (!bus && record.vehicleNumber) {
-      bus = buses.find(
-        (b) =>
-          b.bus_number &&
-          b.bus_number.toUpperCase() === record.vehicleNumber.toUpperCase()
-      );
-    }
-
-    if (!bus) {
-      gpsLogger.logParseWarning(
-        record.vehicleNumber || record.imei,
-        "No matching bus found in database — skipped"
-      );
-      unknown++;
+    // ── Guard: skip records without vehicle number ───────────
+    if (!record.vehicleNumber) {
+      gpsLogger.logParseWarning("upsert", "Record missing vehicleNumber — skipped");
+      failed++;
       continue;
     }
 
-    // ── Deduplication check ───────────────────────────────
-    const newLat = round6(record.latitude);
-    const newLng = round6(record.longitude);
-    const oldLat = bus.latitude != null ? round6(parseFloat(bus.latitude)) : null;
-    const oldLng = bus.longitude != null ? round6(parseFloat(bus.longitude)) : null;
-
-    if (oldLat === newLat && oldLng === newLng) {
-      gpsLogger.logSkipped(bus.bus_number || bus.registration_number);
-      skipped++;
-      continue;
+    // ── Parse gpsActualTime to ISO 8601 for PostgreSQL timestamptz ──────
+    // SkyNav returns: "11-08-2026 00:17:51" (DD-MM-YYYY HH:mm:ss)
+    // We need: "2026-08-11T00:17:51Z" (ISO 8601 / UTC)
+    let gpsActualTimeISO = null;
+    if (record.gpsActualTime) {
+      try {
+        // Format: "DD-MM-YYYY HH:mm:ss"
+        const match = record.gpsActualTime.match(
+          /^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/
+        );
+        if (match) {
+          const [, day, month, year, hour, min, sec] = match;
+          // Treat as UTC (do NOT add +05:30 offset — see architecture notes)
+          gpsActualTimeISO = `${year}-${month}-${day}T${hour}:${min}:${sec}Z`;
+        } else {
+          // Fallback: attempt native Date parse
+          const parsed = new Date(record.gpsActualTime);
+          if (!isNaN(parsed.getTime())) {
+            gpsActualTimeISO = parsed.toISOString();
+          }
+        }
+      } catch {
+        gpsActualTimeISO = null;
+      }
     }
 
-    // ── Perform UPDATE ─────────────────────────────────────
-    const { data: updatedBus, error: updateError } = await writeClient()
-      .from("buses")
-      .update({
-        latitude:   record.latitude,
-        longitude:  record.longitude,
-        status:     record.status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", bus.id)
+    // ── Normalize ignition to string "ON"/"OFF" ──────────────
+    let ignitionStr;
+    if (typeof record.ignition === "boolean") {
+      ignitionStr = record.ignition ? "ON" : "OFF";
+    } else {
+      ignitionStr = String(record.ignition || "OFF").toUpperCase();
+    }
+
+    // ── Build the telemetry record ───────────────────────────
+    const telemetryRecord = {
+      vehicle_number:   record.vehicleNumber,
+      imei:             record.imei             || null,
+      latitude:         record.latitude,
+      longitude:        record.longitude,
+      speed:            record.speed            ?? 0,
+      raw_status:       record.rawStatus         || null,
+      ignition:         ignitionStr,
+      location_address: record.location          || null,
+      gps_actual_time:  gpsActualTimeISO,
+      received_at:      receivedAt,
+      raw_payload:      rawPayload               || null,
+    };
+
+    // ── UPSERT into gps_telemetry ────────────────────────────
+    // vehicle_number is UNIQUE → first call = INSERT, subsequent = UPDATE
+    const { data, error } = await writeClient()
+      .from("gps_telemetry")
+      .upsert(telemetryRecord, { onConflict: "vehicle_number" })
       .select()
       .single();
 
-    if (updateError) {
+    if (error) {
       gpsLogger.logSyncError(
         0,
-        `Failed to update bus ${bus.id}: ${updateError.message}`
+        `Supabase upsert failed for ${record.vehicleNumber}: ${error.message}`
       );
+      failed++;
       continue;
     }
 
-    updated.push({
-      ...updatedBus,
-      speed: record.speed,
-      gpsActualTime: record.gpsActualTime,
+    upserted.push({
+      ...data,
+      // Include parsed fields for Socket.IO emission
+      vehicleNumber:  record.vehicleNumber,
+      latitude:       record.latitude,
+      longitude:      record.longitude,
+      speed:          record.speed,
+      rawStatus:      record.rawStatus,
+      ignition:       ignitionStr,
+      location:       record.location,
+      gpsActualTime:  gpsActualTimeISO,
+      receivedAt,
     });
+
+    console.log(
+      `[GPS] ✅ Upserted telemetry | vehicle=${record.vehicleNumber} ` +
+      `lat=${record.latitude} lng=${record.longitude} status=${record.rawStatus}`
+    );
   }
 
-  return { updated, skipped, unknown };
+  return { upserted, failed };
 };

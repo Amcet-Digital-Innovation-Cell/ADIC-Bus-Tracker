@@ -1,86 +1,174 @@
 /**
  * gps/gps.service.js
  * ─────────────────────────────────────────────────────────────
- * SkyNav API client.
+ * SkyNav GPS API client.
  *
- * Responsible for authenticating with SkyNav and fetching the
- * latest GPS data package. All credentials are read from env
- * variables — never from the frontend, never from request params.
+ * Calls POST https://api.skynavgps.com/v2/devices/?imei=<IMEI>
+ * with multipart/form-data credentials and returns the raw JSON.
  *
- * The frontend has ZERO access to SkyNav credentials or endpoints.
+ * IMPORTANT — BEARER TOKEN:
+ *   The official SkyNav docs require Bearer-token authentication.
+ *   However, the demo credentials work WITHOUT a Bearer token.
+ *   Therefore: if SKYNAV_BEARER_TOKEN is set, it is sent.
+ *              if SKYNAV_BEARER_TOKEN is absent, no Authorization
+ *              header is added — the demo credentials continue to work.
  *
- * ─────────────────────────────────────────────────────────────
- * AUTHENTICATION FLOW:
+ * IMPORTANT — RATE LIMIT:
+ *   The demo SkyNav API allows approximately ONE request per minute.
+ *   The GPS_POLL_INTERVAL_MS env var controls this (default 60s).
+ *   The retry logic below uses a CONSERVATIVE approach: it does NOT
+ *   retry on API-level errors (root.error) since a retry immediately
+ *   would just hit the rate limit again.
  *
- * SkyNav uses Bearer Token authentication.
- * The token is stored in SKYNAV_BEARER_TOKEN env var.
- *
- * If SkyNav requires a login step first, the service will:
- *   1. POST to SKYNAV_API_URL/login with username + password
- *   2. Extract the session token from the response
- *   3. Use that token for the device data request
- *
+ * IMPORTANT — ERROR DETECTION:
+ *   SkyNav returns HTTP 200 even for errors, e.g.:
+ *     { "root": { "error": "The call exceeded the limit..." } }
+ *   This is detected and returned as null (not passed to the parser).
  * ─────────────────────────────────────────────────────────────
  */
 
+"use strict";
+
 const config = require("../config/env");
-const { fetchWithRetry } = require("../utils/httpClient");
 const gpsLogger = require("./gpsLogger");
+
+// node-fetch v2 is CommonJS-compatible
+const fetch = require("node-fetch");
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 /**
  * fetchGpsData
- * Calls the SkyNav API to retrieve the latest GPS package
- * for all configured devices.
+ * ─────────────────────────────────────────────────────────────
+ * Calls the SkyNav /v2/devices/ endpoint.
  *
- * @returns {Promise<any>} - Raw JSON response from SkyNav
- * @throws {Error} - If SkyNav is not configured or request fails
+ * @returns {Promise<object|null>}
+ *   Raw JSON from SkyNav, or null if not configured / API fails.
  */
 exports.fetchGpsData = async () => {
   const { skynav } = config;
 
-  // Guard: credentials must be configured
+  // ── Guard: skip if credentials aren't set ────────────────────────────
   if (!skynav.isConfigured) {
     gpsLogger.logNotConfigured();
     return null;
   }
 
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${skynav.bearerToken}`,
-    "X-Project-ID": skynav.projectId || "",
-    "X-Company":    skynav.companyName || "",
-  };
+  // ── Build the URL with IMEI query parameter ───────────────────────────
+  const baseUrl = (skynav.apiUrl || "https://api.skynavgps.com/v2").replace(/\/$/, "");
+  const imeiList = skynav.imei || "";
+  const url = `${baseUrl}/devices/?imei=${encodeURIComponent(imeiList)}`;
 
-  // Build the device data URL.
-  // SkyNav typically uses one of these patterns:
-  //   GET  /api/devices         — all devices
-  //   GET  /api/devices/{imei}  — specific device by IMEI
-  //   POST /api/getlocation     — location for specific devices
-  //
-  // When SKYNAV_IMEI is set, fetch only that device;
-  // otherwise fetch all devices associated with the project.
-  const endpoint = skynav.imei
-    ? `${skynav.apiUrl}/devices/${skynav.imei}`
-    : `${skynav.apiUrl}/devices`;
+  // ── Build form-data body (SkyNav expects form-data, not JSON) ─────────
+  const formData = new URLSearchParams();
+  formData.append("username", skynav.username || "");
+  formData.append("password", skynav.password || "");
+  formData.append("projectId", skynav.projectId || "");
+  formData.append("companyName", skynav.companyName || "");
 
-  const result = await fetchWithRetry(
-    endpoint,
-    {
-      method: "GET",
-      headers,
-    },
-    {
-      retries: 3,          // Retry up to 3 times on failure
-      baseDelayMs: 1000,   // Start with 1s delay, doubles each retry
-      timeoutMs: 15000,    // 15 second timeout per attempt
-    }
-  );
-
-  if (!result.ok) {
-    throw new Error(
-      `SkyNav API returned HTTP ${result.status}. Response: ${JSON.stringify(result.data)}`
-    );
+  // ── Build headers — Bearer token is OPTIONAL ──────────────────────────
+  // Demo credentials work without it; production may require it.
+  const headers = {};
+  if (skynav.bearerToken && skynav.bearerToken !== "your-bearer-token-here") {
+    headers["Authorization"] = `Bearer ${skynav.bearerToken}`;
   }
 
-  return result.data;
+  console.log(`[GPS] 🔄 Fetching GPS data | IMEI: ${imeiList} | URL: ${url}`);
+
+  // ── Single attempt with timeout ───────────────────────────────────────
+  // NOTE: We do NOT retry on API-level failures (root.error) because an
+  // immediate retry would just re-trigger the SkyNav rate limit.
+  // Network errors (timeout, DNS) get retried once.
+  const MAX_RETRIES = 2;
+  const TIMEOUT_MS = 20000; // 20s — SkyNav can be slow
+  const BASE_DELAY = 2000;  // 2s delay between retries
+
+  let lastError;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Parse response body
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error(
+          `[GPS] ❌ Non-JSON response from SkyNav (HTTP ${response.status}): ${text.slice(0, 300)}`
+        );
+        throw new Error(`SkyNav returned non-JSON (HTTP ${response.status})`);
+      }
+
+      // ── HTTP-level error ──────────────────────────────────────────────
+      if (!response.ok) {
+        throw new Error(`SkyNav HTTP ${response.status}: ${JSON.stringify(data).slice(0, 200)}`);
+      }
+
+      // ── SkyNav application-level errors (HTTP 200 but error body) ──────
+      // Pattern 1: { "root": { "error": "..." } }
+      if (data && data.root && data.root.error) {
+        const errMsg = data.root.error;
+        console.warn(`[GPS] ⚠️  SkyNav API error (HTTP 200): ${errMsg}`);
+        // Rate limit error — do NOT retry
+        if (
+          errMsg.toLowerCase().includes("limit") ||
+          errMsg.toLowerCase().includes("one minute") ||
+          errMsg.toLowerCase().includes("exceeded")
+        ) {
+          console.warn("[GPS] 🚫 Rate limit hit. Will retry on next scheduler cycle.");
+          return null;
+        }
+        // Other API errors — also return null (invalid data)
+        return null;
+      }
+
+      // Pattern 2: { "result": 0, "message": "..." } (older SkyNav format)
+      if (data && data.result === 0) {
+        console.warn(`[GPS] ⚠️  SkyNav API error: ${data.message || "Unknown error"}`);
+        return null;
+      }
+
+      // ── Check VehicleData is present before declaring success ──────────
+      if (!data?.root?.VehicleData) {
+        console.warn(
+          `[GPS] ⚠️  Response has no VehicleData. Keys: [${Object.keys(data?.root || data || {}).join(", ")}]`
+        );
+        // Return the raw data so gpsParser can log a proper warning
+        return data;
+      }
+
+      console.log(`[GPS] ✅ SkyNav response received (attempt ${attempt}) | ${data.root.VehicleData.length} vehicle(s)`);
+      return data;
+
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err;
+
+      if (err.name === "AbortError") {
+        console.error(`[GPS] ⏱️  Request timed out after ${TIMEOUT_MS}ms (attempt ${attempt})`);
+      } else {
+        console.error(`[GPS] ❌ Attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`);
+      }
+
+      if (attempt < MAX_RETRIES) {
+        console.log(`[GPS] ⏳ Retrying in ${BASE_DELAY}ms…`);
+        await sleep(BASE_DELAY);
+      }
+    }
+  }
+
+  console.error(`[GPS] 💀 All ${MAX_RETRIES} attempts failed. Last error: ${lastError?.message}`);
+  return null;
 };

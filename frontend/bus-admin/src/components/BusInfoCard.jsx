@@ -3,7 +3,12 @@
    Shows: Bus ID · Bus Number · Route · Driver Name ·
           Driver Contact · License Number · Capacity
 ───────────────────────────────────────────────────────── */
-import { Bus, MapPin } from 'lucide-react';
+import { Bus, MapPin, Wifi, WifiOff } from 'lucide-react';
+
+const GPS_STATUS_CONFIG = {
+  Online:  { color: '#2d9e5f', bg: '#f0fff4', icon: Wifi },
+  Pending: { color: '#e28743', bg: '#fffaf0', icon: WifiOff },
+};
 
 function InfoRow({ label, value }) {
   return (
@@ -11,6 +16,22 @@ function InfoRow({ label, value }) {
       <span className="bus-info__label">{label}</span>
       <span className="bus-info__value">{value}</span>
     </div>
+  );
+}
+
+function GpsStatusBadge({ status }) {
+  const cfg = GPS_STATUS_CONFIG[status] ?? GPS_STATUS_CONFIG.Pending;
+  const Icon = cfg.icon;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '4px',
+      padding: '2px 10px', borderRadius: '12px',
+      fontSize: '12px', fontWeight: 600,
+      color: cfg.color, background: cfg.bg,
+    }}>
+      <Icon size={12} strokeWidth={2.5} />
+      {status}
+    </span>
   );
 }
 
@@ -40,6 +61,12 @@ export default function BusInfoCard({ bus, onTrackLocation }) {
               <InfoRow label="Bus ID" value={busIdDisplay} />
               <InfoRow label="Bus Number" value={bus.number || bus.busNo} />
               <InfoRow label="Route" value={bus.route} />
+              <div className="bus-info__row">
+                <span className="bus-info__label">GPS Status</span>
+                <span className="bus-info__value">
+                  <GpsStatusBadge status={bus.gpsStatus || 'Pending'} />
+                </span>
+              </div>
               <InfoRow label="Driver Name" value={bus.driver} />
               <InfoRow label="Driver Contact" value={bus.driverPhone || bus.contact} />
               <InfoRow label="License Number" value={bus.license} />

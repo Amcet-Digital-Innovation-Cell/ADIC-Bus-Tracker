@@ -1,59 +1,82 @@
 /**
  * sockets/location.socket.js
  * ─────────────────────────────────────────────────────────────
- * Socket.IO event broadcaster for live bus location updates.
+ * Socket.IO event broadcaster for live bus GPS location updates.
  *
  * This module does NOT manage the Socket.IO server itself.
  * The server is initialized in config/socket.js.
  *
- * broadcastBusLocation() is called by gpsScheduler.js every
- * time GPS coordinates change in the database.
+ * broadcastBusLocation() is called by gpsScheduler.js every time
+ * GPS data is upserted to gps_telemetry.
  *
  * Event name: 'busLocationUpdated'
- * Payload:
+ * Payload (safe — no secrets):
  *   {
- *     busNumber:   string,   // e.g. "01"
- *     latitude:    number,
- *     longitude:   number,
- *     speed:       number,   // km/h from SkyNav
- *     status:      string,   // "active" | "inactive"
- *     updatedAt:   string,   // ISO timestamp
+ *     vehicleNumber: string,   // e.g. "TN11BE7456"
+ *     latitude:      number,
+ *     longitude:     number,
+ *     speed:         number,   // km/h from SkyNav
+ *     rawStatus:     string,   // "STOP" | "RUNNING" | etc.
+ *     ignition:      string,   // "ON" | "OFF"
+ *     location:      string,   // Location address from SkyNav
+ *     gpsActualTime: string,   // ISO 8601 UTC timestamp
+ *     receivedAt:    string,   // ISO 8601 UTC timestamp
  *   }
+ *
+ * IMPORTANT: Do NOT emit secrets, IMEI, passwords, or service-role keys.
  * ─────────────────────────────────────────────────────────────
  */
+
+"use strict";
 
 const { getIO } = require("../config/socket");
 
 /**
  * broadcastBusLocation
- * Emits a 'busLocationUpdated' event to ALL connected clients
- * and also to the bus-specific room 'bus:<busNumber>'.
- *
- * Called from gpsScheduler.js after a successful Supabase update.
+ * Emits 'busLocationUpdated' to ALL connected clients and also
+ * to the vehicle-specific room 'vehicle:<vehicleNumber>'.
  *
  * @param {{
- *   busNumber: string,
- *   registrationNumber: string,
- *   latitude: number,
- *   longitude: number,
- *   speed: number,
- *   status: string,
- *   updatedAt: string
+ *   vehicleNumber: string,
+ *   latitude:      number,
+ *   longitude:     number,
+ *   speed:         number,
+ *   rawStatus:     string,
+ *   ignition:      string,
+ *   location:      string,
+ *   gpsActualTime: string,
+ *   receivedAt:    string
  * }} payload
  */
 exports.broadcastBusLocation = (payload) => {
   try {
     const io = getIO();
 
-    // Broadcast to ALL connected clients (React dashboard)
-    io.emit("busLocationUpdated", payload);
+    // Safe payload — strip anything that shouldn't reach the browser
+    const safePayload = {
+      vehicleNumber: payload.vehicleNumber,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      speed: payload.speed,
+      rawStatus: payload.rawStatus,
+      ignition: payload.ignition,
+      location: payload.location,
+      gpsActualTime: payload.gpsActualTime,
+      receivedAt: payload.receivedAt,
+    };
 
-    // Also emit to the bus-specific room (for future Flutter per-bus tracking)
-    if (payload.busNumber) {
-      io.to(`bus:${payload.busNumber}`).emit("busLocationUpdated", payload);
+    // Broadcast to ALL connected clients (React dashboard)
+    io.emit("busLocationUpdated", safePayload);
+
+    // Also emit to the vehicle-specific room for targeted subscriptions
+    if (payload.vehicleNumber) {
+      io.to(`vehicle:${payload.vehicleNumber}`).emit("busLocationUpdated", safePayload);
     }
+
+    console.log(`[Socket] 📡 Emitted busLocationUpdated | vehicle=${payload.vehicleNumber}`);
+
   } catch (err) {
-    // If Socket.IO is not initialized (e.g. during startup), log and continue
+    // Socket.IO not initialized yet (e.g. during startup tests) — log and continue
     console.warn("[Socket] broadcastBusLocation failed:", err.message);
   }
 };
