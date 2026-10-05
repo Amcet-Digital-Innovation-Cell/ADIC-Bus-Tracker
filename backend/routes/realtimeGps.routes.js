@@ -4,7 +4,7 @@
  * Real-time GPS endpoints (device → server).
  *
  * These endpoints are designed to receive raw GPS data pushed
- * from hardware GPS devices or the Traccar server, and
+ * from hardware GPS devices or simulators, and
  * immediately broadcast the position via Socket.IO.
  *
  * Unlike the SkyNav scheduler (which PULLS from SkyNav every
@@ -17,11 +17,8 @@
  *   GET    /api/realtime/gps/history     — Full history (memory)
  *   GET    /api/realtime/gps/history/db  — Full history (Supabase)
  *   DELETE /api/realtime/gps/history     — Clear in-memory history
- *   POST   /traccar/webhook              — Traccar server webhook
  *
- * Note: /traccar/webhook is mounted as a PUBLIC route (no auth)
- * in app.js because Traccar cannot send a user JWT.
- * The other routes are protected by the Supabase JWT middleware.
+ * All routes are protected by the Supabase JWT middleware.
  * ─────────────────────────────────────────────────────────────
  */
 

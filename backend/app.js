@@ -33,7 +33,6 @@ const gpsRoutes = require("./gps/gps.routes");
 const routeRoutes = require("./routes/route.routes");
 const publicRoutes = require("./routes/public.routes");
 const realtimeGpsRoutes = require("./routes/realtimeGps.routes");
-const traccarRoutes = require("./routes/traccar.routes");
 
 const app = express();
 
@@ -65,10 +64,6 @@ app.options("/{*path}", cors(corsOptions)); // Pre-flight (Express v5 wildcard s
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
-
-// ── Public routes (no auth required) ─────────────────────────────────────
-// Traccar webhook must be public — GPS hardware cannot send a user JWT.
-app.use("/traccar/webhook", traccarRoutes);
 
 // ── Health check (public) ─────────────────────────────────────────────────
 app.get("/", (req, res) => {

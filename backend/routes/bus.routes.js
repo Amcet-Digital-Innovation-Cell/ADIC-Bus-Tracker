@@ -26,6 +26,12 @@ router.post("/", busController.createBus);
 // NOTE: GPS fields are blocked in the service layer
 router.put("/:id", busController.updateBus);
 
+// GET /api/buses/:id/stops — get stops for a single bus
+router.get("/:id/stops", busController.getBusStops);
+
+// PUT /api/buses/:id/stops — replace all stops for a single bus
+router.put("/:id/stops", busController.updateBusStops);
+
 // DELETE /api/buses/:id — delete a bus
 router.delete("/:id", busController.deleteBus);
 

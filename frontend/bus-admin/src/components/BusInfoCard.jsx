@@ -1,42 +1,68 @@
 /* ─────────────────────────────────────────────────────────
    BusInfoCard — "Bus Details" card below the Bus List
-   Shows: Bus ID · Bus Number · Route · Driver Name ·
-          Driver Contact · License Number · Capacity
+   Shows bus details in a 2-column info grid matching the screenshot
 ───────────────────────────────────────────────────────── */
-import { Bus, MapPin, Wifi, WifiOff } from 'lucide-react';
+import { Bus, MapPin } from 'lucide-react';
 
-const GPS_STATUS_CONFIG = {
-  Online:  { color: '#2d9e5f', bg: '#f0fff4', icon: Wifi },
-  Pending: { color: '#e28743', bg: '#fffaf0', icon: WifiOff },
-};
-
-function InfoRow({ label, value }) {
+function InfoItem({ label, value }) {
   return (
-    <div className="bus-info__row">
+    <div className="bus-info__item">
       <span className="bus-info__label">{label}</span>
-      <span className="bus-info__value">{value}</span>
+      <span className="bus-info__value" title={value}>{value || '—'}</span>
     </div>
   );
 }
 
-function GpsStatusBadge({ status }) {
-  const cfg = GPS_STATUS_CONFIG[status] ?? GPS_STATUS_CONFIG.Pending;
-  const Icon = cfg.icon;
+function StatusBadge({ status }) {
+  const isActive   = status === 'Active' || status === 'active';
+  const isInactive = status === 'Inactive' || status === 'inactive';
+  const cls = isActive ? 'status-badge status-badge--active'
+            : isInactive ? 'status-badge status-badge--inactive'
+            : 'status-badge status-badge--pending';
+  return <span className={cls}>{status || 'Pending'}</span>;
+}
+
+/**
+ * StopsItem
+ * Renders the "Stops" grid cell.
+ * – Shows a compact pill with the stop count.
+ * – On hover, a floating tooltip lists every stop name separated by →.
+ */
+function StopsItem({ stops }) {
+  const count = Array.isArray(stops) ? stops.length : 0;
+
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '2px 10px', borderRadius: '12px',
-      fontSize: '12px', fontWeight: 600,
-      color: cfg.color, background: cfg.bg,
-    }}>
-      <Icon size={12} strokeWidth={2.5} />
-      {status}
-    </span>
+    <div className="bus-info__item">
+      <span className="bus-info__label">Stops</span>
+      {count > 0 ? (
+        <div className="bus-info__stops-wrap">
+          {/* Count pill — the hover target */}
+          <span className="bus-info__stops-pill">
+            {count}&nbsp;{count === 1 ? 'Stop' : 'Stops'}
+          </span>
+
+          {/* Tooltip — shown on hover via CSS */}
+          <div className="bus-info__stops-tooltip" role="tooltip" aria-label="Stopping pattern">
+            <ol className="bus-info__stops-tooltip-list">
+              {stops.map((s, i) => (
+                <li key={s.id ?? i} className="bus-info__stops-tooltip-item">
+                  {s.stop_name}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      ) : (
+        <span className="bus-info__value">—</span>
+      )}
+    </div>
   );
 }
 
 export default function BusInfoCard({ bus, onTrackLocation }) {
-  const busIdDisplay = bus ? (bus.busId || (bus.route && /^\d+-/.test(bus.route) ? bus.route.split('-')[0] : null) || (bus.id && String(bus.id).length < 5 ? bus.id : bus.busNo)) : null;
+  const busIdDisplay = bus
+    ? (bus.busId || (bus.route && /^\d+-/.test(bus.route) ? bus.route.split('-')[0] : null) || (bus.id && String(bus.id).length < 5 ? bus.id : bus.busNo))
+    : null;
 
   return (
     <div className="bus-info-card">
@@ -58,21 +84,20 @@ export default function BusInfoCard({ bus, onTrackLocation }) {
         {bus ? (
           <>
             <div className="bus-info__grid">
-              <InfoRow label="Bus ID" value={busIdDisplay} />
-              <InfoRow label="Bus Number" value={bus.number || bus.busNo} />
-              <InfoRow label="Route" value={bus.route} />
-              <div className="bus-info__row">
-                <span className="bus-info__label">GPS Status</span>
-                <span className="bus-info__value">
-                  <GpsStatusBadge status={bus.gpsStatus || 'Pending'} />
-                </span>
+              <InfoItem label="Bus ID"         value={busIdDisplay} />
+              <InfoItem label="Bus Number"     value={bus.number || bus.busNo} />
+              <InfoItem label="Route"          value={bus.route} />
+              <div className="bus-info__item">
+                <span className="bus-info__label">Status</span>
+                <StatusBadge status={bus.status} />
               </div>
-              <InfoRow label="Driver Name" value={bus.driver} />
-              <InfoRow label="Driver Contact" value={bus.driverPhone || bus.contact} />
-              <InfoRow label="License Number" value={bus.license} />
+              <InfoItem label="Driver Name"    value={bus.driver} />
+              <InfoItem label="Driver Contact" value={bus.driverPhone || bus.contact} />
+              <InfoItem label="License Number" value={bus.license} />
+              <StopsItem stops={bus.stops} />
             </div>
 
-            {/* ── Track Location button ── */}
+            {/* Track Location button */}
             <button
               className="track-location-btn"
               onClick={onTrackLocation}

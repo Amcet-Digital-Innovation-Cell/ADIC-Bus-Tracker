@@ -57,7 +57,6 @@ httpServer.listen(config.port, () => {
   console.log(`  🔒  GET  /api/gps/status         (scheduler status)`);
   console.log(`  🔒  POST /api/realtime/gps/update (device GPS push)`);
   console.log(`  🔒  GET  /api/realtime/gps/live  (latest GPS location)`);
-  console.log(`  🔑  POST /traccar/webhook         (Traccar webhook, public)`);
   console.log("═══════════════════════════════════════════════");
 
   // ── Start GPS scheduler AFTER server is ready ──────────────

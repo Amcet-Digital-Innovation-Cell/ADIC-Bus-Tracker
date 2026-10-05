@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { User, ArrowLeft } from "lucide-react";
+import { User, X } from "lucide-react";
 
 export default function Profile({ isOpen, onClose, email = "admin@example.com" }) {
 
@@ -19,7 +19,7 @@ export default function Profile({ isOpen, onClose, email = "admin@example.com" }
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.05)',
+        background: 'transparent',
         display: 'flex',
         justifyContent: 'flex-end',
         alignItems: 'flex-start',
@@ -29,101 +29,83 @@ export default function Profile({ isOpen, onClose, email = "admin@example.com" }
       <div
         style={{
           position: 'absolute',
-          top: '75px',
-          right: '30px',
-          width: '330px',
-          backgroundColor: '#2C3E50',
-          borderRadius: '16px',
-          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+          top: '72px',
+          right: '20px',
+          width: '310px',
+          backgroundColor: 'var(--color-navy)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 12px 32px rgba(0,0,0,0.22), 0 4px 12px rgba(0,0,0,0.12)',
           padding: '16px',
           display: 'flex',
           flexDirection: 'column',
           gap: '12px',
-          animation: 'modal-scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          animation: 'slide-down 0.18s cubic-bezier(0.16,1,0.3,1)',
+          border: '1px solid rgba(255,255,255,0.08)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}>
-          {/* Circular back arrow button */}
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ color: '#ffffff', fontSize: '15px', fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>
+            Profile
+          </h2>
           <button
             onClick={onClose}
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              border: '2px solid #ffffff',
-              background: 'transparent',
-              color: '#ffffff',
+              width: '28px', height: '28px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: 'rgba(255,255,255,0.06)',
+              color: 'rgba(255,255,255,0.7)',
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-              transition: 'background-color 0.2s ease',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.15s ease, color 0.15s ease',
             }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-            title="Go back"
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; e.currentTarget.style.color = '#ffffff'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+            title="Close"
           >
-            <ArrowLeft size={16} strokeWidth={2.5} />
+            <X size={14} strokeWidth={2.5} />
           </button>
-
-          {/* Title */}
-          <h2 style={{
-            color: '#ffffff',
-            fontSize: '18px',
-            fontWeight: 'normal',
-            margin: 0,
-            fontFamily: 'Arial, sans-serif',
-          }}>
-            Profile
-          </h2>
         </div>
 
         {/* White inner card */}
         <div style={{
           backgroundColor: '#ffffff',
-          borderRadius: '12px',
+          borderRadius: 'var(--radius-md)',
           padding: '14px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          width: '100%',
-          boxSizing: 'border-box',
           overflow: 'hidden',
         }}>
-          {/* Grey circular avatar with dark border */}
+          {/* Avatar */}
           <div style={{
-            width: '44px',
-            height: '44px',
+            width: '42px', height: '42px',
             borderRadius: '50%',
-            backgroundColor: '#d1d5db',
-            border: '2px solid #374151',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            backgroundColor: '#e2e8f0',
+            border: '2px solid #cbd5e0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <User size={26} color="#000000" fill="#000000" />
+            <User size={22} color="#4a5568" strokeWidth={2} />
           </div>
 
-          {/* Clickable email link */}
+          {/* Email */}
           <a
             href={`mailto:${email}`}
             style={{
-              fontSize: '16px',
-              color: '#000000',
-              textDecoration: 'underline',
-              fontFamily: 'Georgia, serif',
+              fontSize: '13.5px',
+              color: 'var(--color-text-secondary)',
+              textDecoration: 'none',
+              fontWeight: 500,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              transition: 'color 0.15s ease',
             }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-blue)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
           >
             {email}
           </a>
