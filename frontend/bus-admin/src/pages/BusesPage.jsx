@@ -1,45 +1,67 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, X, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://bustransit-g4ks.onrender.com';
 
-// Helper to get stored JWT token
 const getToken = () => sessionStorage.getItem('authToken');
 
-// Map Supabase column names → frontend field names
 const mapFromDb = (row) => ({
   id: row.id,
-  busId: row.bus_number || '',
-  busNo: row.registration_number || '',
-  driver: row.driver_name || '',
-  contact: row.driver_phone || '',
-  route: row.route_name || '',
+  busId: row.bus_number ? String(row.bus_number).toUpperCase() : '',
+  busNo: row.registration_number ? String(row.registration_number).replace(/\s+/g, '').toUpperCase() : '',
+  driver: row.driver_name ? String(row.driver_name).toUpperCase() : '',
+  contact: row.driver_phone ? String(row.driver_phone).toUpperCase() : '',
+  route: row.route_name ? String(row.route_name).toUpperCase() : '',
   route_id: row.route_id || '',
-  license: row.license_number || '',
+  license: row.license_number ? String(row.license_number).toUpperCase() : '',
   status: row.status || 'Pending (GPS)',
   latitude: row.latitude,
   longitude: row.longitude,
+  stops: Array.isArray(row.stops)
+    ? row.stops.map((s, idx) => ({
+        id: s.id || idx,
+        stop_name: (s.stop_name || s || '').toUpperCase(),
+        stop_order: s.stop_order || idx + 1,
+      }))
+    : (Array.isArray(row.bus_stops)
+        ? row.bus_stops.map((s, idx) => ({
+            id: s.id || idx,
+            stop_name: (s.stop_name || s || '').toUpperCase(),
+            stop_order: s.stop_order || idx + 1,
+          }))
+        : []),
 });
 
-const BusesPage = ({ buses, setBuses }) => {
+/* ── Status badge component ── */
+function StatusBadge({ status }) {
+  const isActive   = status === 'Active' || status === 'active';
+  const isInactive = status === 'Inactive' || status === 'inactive';
+  const cls = isActive
+    ? 'status-badge status-badge--active'
+    : isInactive
+    ? 'status-badge status-badge--inactive'
+    : 'status-badge status-badge--pending';
+  return <span className={cls}>{status || 'Pending'}</span>;
+}
 
+const BusesPage = ({ buses, setBuses }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBus, setEditingBus] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [editingBus, setEditingBus]   = useState(null);
+  const [searchTerm, setSearchTerm]   = useState('');
   const [busToDelete, setBusToDelete] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [apiError, setApiError] = useState('');
+  const [saving, setSaving]           = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [apiError, setApiError]       = useState('');
   const cancelDeleteRef = useRef(null);
 
-  const emptyForm = { route_id: '', route: '', busNo: '', busId: '', driver: '', contact: '', license: '' };
+  const emptyForm = { route_id: '', route: '', busNo: '', busId: '', driver: '', contact: '', license: '', stops: [] };
   const [formData, setFormData] = useState(emptyForm);
 
-  const [routesList, setRoutesList] = useState([]);
+  const [routesList, setRoutesList]     = useState([]);
   const [routesLoading, setRoutesLoading] = useState(false);
-  const [routesError, setRoutesError] = useState('');
+  const [routesError, setRoutesError]   = useState('');
 
-  // ── Load routes from Supabase on mount ──────────────────────────────────
+  // ── Load routes ──────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchRoutes = async () => {
       setRoutesLoading(true);
@@ -62,7 +84,7 @@ const BusesPage = ({ buses, setBuses }) => {
     fetchRoutes();
   }, []);
 
-  // ── Load buses from Supabase on mount ──────────────────────────────────────
+  // ── Load buses ──────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchBuses = async () => {
       try {
@@ -80,14 +102,64 @@ const BusesPage = ({ buses, setBuses }) => {
     fetchBuses();
   }, []);
 
-  // Filter logic
   const filteredBuses = buses.filter(bus =>
-    (bus.busNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.route || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.driver || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (bus.busNo   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (bus.route   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (bus.driver  || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ── Create / Update ────────────────────────────────────────────────────────
+  // ── Stop Management Handlers ──────────────────────────────────────────────
+  const handleAddStop = () => {
+    setFormData((prev) => ({
+      ...prev,
+      stops: [
+        ...prev.stops,
+        { stop_name: '', stop_order: prev.stops.length + 1 },
+      ],
+    }));
+  };
+
+  const handleRemoveStop = (indexToRemove) => {
+    setFormData((prev) => {
+      const updated = prev.stops.filter((_, idx) => idx !== indexToRemove);
+      const reordered = updated.map((s, idx) => ({
+        ...s,
+        stop_order: idx + 1,
+      }));
+      return { ...prev, stops: reordered };
+    });
+  };
+
+  const handleUpdateStopName = (index, value) => {
+    setFormData((prev) => {
+      const updated = [...prev.stops];
+      updated[index] = {
+        ...updated[index],
+        stop_name: value.toUpperCase(),
+      };
+      return { ...prev, stops: updated };
+    });
+  };
+
+  const handleMoveStop = (index, direction) => {
+    setFormData((prev) => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.stops.length) return prev;
+
+      const updated = [...prev.stops];
+      const temp = updated[index];
+      updated[index] = updated[targetIndex];
+      updated[targetIndex] = temp;
+
+      const reordered = updated.map((s, idx) => ({
+        ...s,
+        stop_order: idx + 1,
+      }));
+      return { ...prev, stops: reordered };
+    });
+  };
+
+  // ── Create / Update ──────────────────────────────────────────────────────
   const handleSave = async () => {
     setApiError('');
     if (!formData.route_id) {
@@ -96,41 +168,63 @@ const BusesPage = ({ buses, setBuses }) => {
     }
     setSaving(true);
     try {
-      const payload = {
-        busNo: formData.busNo,
-        busId: formData.busId,
-        driver: formData.driver,
-        contact: formData.contact,
-        route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
-        license: formData.license,
-      };
+      const stopsPayload = (formData.stops || [])
+        .map((s, idx) => ({
+          stop_name: (s.stop_name || '').trim().toUpperCase(),
+          stop_order: idx + 1,
+        }))
+        .filter(s => s.stop_name.length > 0);
 
       if (editingBus) {
-        // UPDATE
+        // Step 1: Update bus metadata (exclude stops — handled separately)
+        const metaPayload = {
+          busNo:    (formData.busNo || '').replace(/\s+/g, '').toUpperCase(),
+          driver:   (formData.driver || '').trim().toUpperCase(),
+          contact:  (formData.contact || '').trim().toUpperCase(),
+          route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
+          license:  (formData.license || '').trim().toUpperCase(),
+        };
+
         const res = await fetch(`${API_BASE}/api/buses/${editingBus.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${getToken()}`,
-          },
-          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify(metaPayload),
         });
         const json = await res.json();
-        if (!res.ok) throw new Error(json.message || 'Update failed');
-        const updated = mapFromDb(json.data);
+        if (!res.ok) throw new Error(json.error || json.message || 'Update failed');
+
+        // Step 2: Update stops via dedicated endpoint
+        const stopsRes = await fetch(`${API_BASE}/api/buses/${editingBus.id}/stops`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify({ stops: stopsPayload }),
+        });
+        const stopsJson = await stopsRes.json();
+        if (!stopsRes.ok) throw new Error(stopsJson.error || stopsJson.message || 'Failed to save stops');
+
+        // Merge the updated bus data with the fresh stops
+        const updatedStops = stopsJson.data || [];
+        const updated = mapFromDb({ ...json.data, stops: updatedStops });
         setBuses(buses.map(b => b.id === editingBus.id ? updated : b));
       } else {
-        // CREATE
+        // Create new bus — send everything including stops in one request
+        const createPayload = {
+          busNo:    (formData.busNo || '').replace(/\s+/g, '').toUpperCase(),
+          busId:    (formData.busId || '').trim().toUpperCase(),
+          driver:   (formData.driver || '').trim().toUpperCase(),
+          contact:  (formData.contact || '').trim().toUpperCase(),
+          route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
+          license:  (formData.license || '').trim().toUpperCase(),
+          stops:    stopsPayload,
+        };
+
         const res = await fetch(`${API_BASE}/api/buses`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${getToken()}`,
-          },
-          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify(createPayload),
         });
         const json = await res.json();
-        if (!res.ok) throw new Error(json.message || 'Create failed');
+        if (!res.ok) throw new Error(json.error || json.message || 'Create failed');
         const created = mapFromDb(json.data);
         setBuses(prev => [...prev, created]);
       }
@@ -145,7 +239,7 @@ const BusesPage = ({ buses, setBuses }) => {
     }
   };
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
+  // ── Delete ───────────────────────────────────────────────────────────────
   const confirmDelete = (bus) => setBusToDelete(bus);
 
   const handleDeleteConfirm = async () => {
@@ -157,7 +251,7 @@ const BusesPage = ({ buses, setBuses }) => {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Delete failed');
+        throw new Error(json.error || json.message || 'Delete failed');
       }
       setBuses(buses.filter(b => b.id !== busToDelete.id));
       setBusToDelete(null);
@@ -170,7 +264,6 @@ const BusesPage = ({ buses, setBuses }) => {
 
   const handleDeleteCancel = () => setBusToDelete(null);
 
-  /* ESC closes the delete modal; auto-focus Cancel */
   useEffect(() => {
     if (!busToDelete) return;
     const handler = (e) => { if (e.key === 'Escape') handleDeleteCancel(); };
@@ -179,78 +272,128 @@ const BusesPage = ({ buses, setBuses }) => {
     return () => document.removeEventListener('keydown', handler);
   }, [busToDelete]);
 
+  const openAddModal   = () => { setFormData(emptyForm); setEditingBus(null); setApiError(''); setIsModalOpen(true); };
+  const openEditModal  = async (bus) => {
+    setEditingBus(bus);
+    let initialStops = Array.isArray(bus.stops) ? bus.stops : [];
+    if (initialStops.length === 0) {
+      try {
+        const res = await fetch(`${API_BASE}/api/buses/${bus.id}/stops`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const fetchedStops = json.data || json;
+          if (Array.isArray(fetchedStops)) {
+            initialStops = fetchedStops;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load bus stops:', err);
+      }
+    }
+
+    setFormData({
+      route_id: bus.route_id || '',
+      route: (bus.route || '').toUpperCase(),
+      busNo: (bus.busNo || '').replace(/\s+/g, '').toUpperCase(),
+      busId: (bus.busId || '').toUpperCase(),
+      driver: (bus.driver || '').toUpperCase(),
+      contact: (bus.contact || '').toUpperCase(),
+      license: (bus.license || '').toUpperCase(),
+      stops: initialStops.map((s, idx) => ({
+        id: s.id || idx,
+        stop_name: (s.stop_name || s || '').toUpperCase(),
+        stop_order: s.stop_order || idx + 1,
+      })),
+    });
+    setApiError('');
+    setIsModalOpen(true);
+  };
+  const closeModal     = () => { setIsModalOpen(false); setEditingBus(null); setFormData(emptyForm); setApiError(''); };
+
+  const updateField = (field, value) => {
+    let val = value;
+    if (typeof val === 'string' && field !== 'route_id') {
+      val = field === 'busNo' ? val.replace(/\s+/g, '').toUpperCase() : val.toUpperCase();
+    }
+    setFormData(prev => ({ ...prev, [field]: val }));
+  };
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '24px', backgroundColor: '#f9fafb' }}>
-      {/* Search Bar and Add Button Container */}
-      <div className="flex justify-between items-center mb-6 gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+    <div className="buses-page">
+
+      {/* ── Toolbar ───────────────────────────────── */}
+      <div className="buses-toolbar">
+        {/* Search bar */}
+        <div className="buses-search">
+          <Search size={16} className="buses-search__icon" />
           <input
             type="text"
+            className="buses-search__input"
             placeholder="Search by bus no, route, or driver..."
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:gray-300 focus:border-gray-300 transition"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+
+        {/* Add Bus button */}
         <button
-          onClick={() => { setFormData(emptyForm); setEditingBus(null); setIsModalOpen(true); }}
-          className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-semibold transition-colors"
+          id="add-bus-btn"
+          className="btn-orange buses-add-btn"
+          onClick={openAddModal}
         >
-          <Plus size={18} /> Add Bus
+          <Plus size={17} strokeWidth={2.5} />
+          Add Bus
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-        <div className="bg-white rounded-xl shadow border overflow-hidden">
-          <table className="w-full text-center table-fixed border-collapse">
-            <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold">
+      {/* ── Table container ───────────────────────── */}
+      <div className="buses-table-wrap">
+        <div className="buses-table-container">
+          <table className="buses-table">
+            <thead>
               <tr>
-                {[
-                  { name: 'Bus ID', width: '8%' },
-                  { name: 'Route', width: '20%' },
-                  { name: 'Bus No', width: '15%' },
-                  { name: 'Driver', width: '12%' },
-                  { name: 'Contact', width: '14%' },
-                  { name: 'License', width: '12%' },
-                  { name: 'Status', width: '10%' },
-                  { name: 'Action', width: '9%' }
-                ].map(col => (
-                  <th key={col.name} className="p-3 border" style={{ width: col.width }}>{col.name}</th>
+                {['Bus ID', 'Route', 'Bus No', 'Driver', 'Contact', 'License', 'Status', 'Action'].map(col => (
+                  <th key={col} className="buses-table__th">{col}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody>
               {filteredBuses.length > 0 ? (
                 filteredBuses.map((bus) => (
-                  <tr key={bus.id} className="hover:bg-gray-50">
-                    <td className="p-3 border truncate font-semibold text-blue-700" title={bus.busId || ''}>{bus.busId || '—'}</td>
-                    <td className="p-3 border truncate" title={bus.route || ''}>{bus.route}</td>
-                    <td className="p-3 border truncate" title={bus.busNo || ''}>{bus.busNo}</td>
-                    <td className="p-3 border truncate" title={bus.driver || ''}>{bus.driver}</td>
-                    <td className="p-3 border truncate" title={bus.contact || ''}>{bus.contact}</td>
-                    <td className="p-3 border truncate" title={bus.license || ''}>{bus.license}</td>
-                    <td className="p-3 border">
-                      <span style={{
-                        fontSize: '11px', fontWeight: 700, padding: '2px 9px',
-                        borderRadius: '20px', whiteSpace: 'nowrap',
-                        color: bus.status === 'Active' ? '#2d9e5f' : bus.status === 'Inactive' ? '#e53e3e' : '#e28743',
-                        background: bus.status === 'Active' ? '#f0fff4' : bus.status === 'Inactive' ? '#fff5f5' : '#fffaf0',
-                      }}>{bus.status}</span>
+                  <tr key={bus.id} className="buses-table__row">
+                    <td className="buses-table__td buses-table__td--id">{bus.busId || '—'}</td>
+                    <td className="buses-table__td" title={bus.stops && bus.stops.length > 0 ? `Stops: ${bus.stops.map(s => s.stop_name).join(' → ')}` : bus.route}>
+                      <div style={{ fontWeight: 600 }}>{bus.route || '—'}</div>
+                      {bus.stops && bus.stops.length > 0 && (
+                        <div style={{ fontSize: '10px', color: 'var(--color-blue)', fontWeight: 700, marginTop: '2px' }}>
+                          {bus.stops.length} STOPS
+                        </div>
+                      )}
                     </td>
-                    <td className="p-3 border">
-                      <div className="flex justify-center gap-4">
+                    <td className="buses-table__td">{bus.busNo || '—'}</td>
+                    <td className="buses-table__td">{bus.driver || '—'}</td>
+                    <td className="buses-table__td">{bus.contact || '—'}</td>
+                    <td className="buses-table__td">{bus.license || '—'}</td>
+                    <td className="buses-table__td">
+                      <StatusBadge status={bus.status} />
+                    </td>
+                    <td className="buses-table__td buses-table__td--actions">
+                      <div className="buses-actions">
                         <button
-                          onClick={() => { setEditingBus(bus); setFormData(bus); setIsModalOpen(true); }}
-                          className="text-blue-500 hover:scale-110 transition-transform"
+                          className="icon-btn"
+                          title="Edit bus"
+                          onClick={() => openEditModal(bus)}
                         >
-                          <Edit2 size={18} />
+                          <Edit2 size={15} strokeWidth={2} />
                         </button>
                         <button
+                          className="icon-btn icon-btn--danger"
+                          title="Delete bus"
                           onClick={() => confirmDelete(bus)}
-                          className="text-red-500 hover:scale-110 transition-transform"
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={15} strokeWidth={2} />
                         </button>
                       </div>
                     </td>
@@ -258,7 +401,7 @@ const BusesPage = ({ buses, setBuses }) => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center text-gray-400">
+                  <td colSpan="8" className="buses-table__empty">
                     {buses.length === 0
                       ? 'No buses have been added yet. Click "Add Bus" to get started.'
                       : 'No buses match your search. Try a different keyword.'}
@@ -270,191 +413,602 @@ const BusesPage = ({ buses, setBuses }) => {
         </div>
       </div>
 
-      {/* Modal with explicit Labels */}
+      {/* ── Add / Edit Modal ──────────────────────── */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50">
-          <div className="bg-white p-6 rounded-lg w-full max-w-lg relative shadow-xl">
-            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-500 hover:text-gray-700">
-              <X size={20} />
-            </button>
-            <h2 className="text-xl font-bold mb-4">{editingBus ? "Edit Bus" : "Add Bus"}</h2>
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-panel buses-modal" onClick={(e) => e.stopPropagation()}>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">Bus Id</label>
-                <input className="border p-2 rounded w-full" placeholder="ex:01" onChange={e => setFormData({ ...formData, busId: e.target.value })} value={formData.busId} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">Route</label>
-                {routesLoading ? (
-                  <div className="text-xs text-gray-500 p-2 border rounded bg-gray-50">Loading routes...</div>
-                ) : routesError ? (
-                  <div className="text-xs text-red-500 p-2 border rounded border-red-200 bg-red-50">{routesError}</div>
-                ) : (
-                  <select
-                    className="border p-2 rounded w-full bg-white text-sm"
-                    value={formData.route_id || ""}
-                    onChange={(e) => {
-                      const selectedId = e.target.value;
-                      const matchedRoute = routesList.find((r) => String(r.id) === String(selectedId));
-                      setFormData({
-                        ...formData,
-                        route_id: selectedId,
-                        route: matchedRoute ? matchedRoute.routeName : "",
-                      });
-                    }}
-                  >
-                    <option value="">-- Select Route --</option>
-                    {routesList.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.routeName}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">Bus No</label>
-                <input className="border p-2 rounded w-full" placeholder="ex:TN 33 BA 1234" onChange={e => setFormData({ ...formData, busNo: e.target.value })} value={formData.busNo} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">Driver</label>
-                <input className="border p-2 rounded w-full" placeholder="ex:Rajesh" onChange={e => setFormData({ ...formData, driver: e.target.value })} value={formData.driver} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">Contact</label>
-                <input className="border p-2 rounded w-full" placeholder="ex: +91 9876543210" onChange={e => setFormData({ ...formData, contact: e.target.value })} value={formData.contact} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-600">License</label>
-                <input className="border p-2 rounded w-full" placeholder="ex: AD 32545" onChange={e => setFormData({ ...formData, license: e.target.value })} value={formData.license} />
-              </div>
+            {/* Close button */}
+            <button className="modal-close-btn" onClick={closeModal} title="Close">
+              <X size={14} strokeWidth={2.5} />
+            </button>
+
+            {/* Title */}
+            <div className="buses-modal__header">
+              <h2 className="buses-modal__title">{editingBus ? 'Edit Bus' : 'Add Bus'}</h2>
             </div>
 
-            {apiError && (
-              <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '8px', color: '#dc2626', fontSize: '13px', textAlign: 'center' }}>
-                {apiError}
+            {/* Form */}
+            <div className="buses-modal__body">
+              <div className="buses-modal__grid">
+
+                {/* Bus Id */}
+                <div className="buses-modal__field">
+                  <label className="form-label">Bus Id</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. 01"
+                    value={formData.busId}
+                    onChange={e => !editingBus && updateField('busId', e.target.value)}
+                    readOnly={!!editingBus}
+                    style={editingBus ? { opacity: 0.6, cursor: 'not-allowed', background: 'var(--color-bg-subtle, #f5f5f5)' } : {}}
+                    title={editingBus ? 'Bus ID cannot be changed while editing' : ''}
+                  />
+                </div>
+
+                {/* Route */}
+                <div className="buses-modal__field">
+                  <label className="form-label">Route</label>
+                  {routesLoading ? (
+                    <div className="buses-modal__loading">Loading routes…</div>
+                  ) : routesError ? (
+                    <div className="buses-modal__routes-error">{routesError}</div>
+                  ) : (
+                    <div className="buses-modal__select-wrap">
+                      <select
+                        className="form-select"
+                        value={formData.route_id || ''}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const matched = routesList.find(r => String(r.id) === String(selectedId));
+                          updateField('route_id', selectedId);
+                          updateField('route', matched ? matched.routeName : '');
+                        }}
+                      >
+                        <option value="">— Select Route —</option>
+                        {routesList.map(r => (
+                          <option key={r.id} value={r.id}>{r.routeName}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="buses-modal__select-icon" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Bus No */}
+                <div className="buses-modal__field">
+                  <label className="form-label">Bus No</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. TN33BA1234"
+                    value={formData.busNo}
+                    onChange={e => updateField('busNo', e.target.value)}
+                  />
+                </div>
+
+                {/* Driver */}
+                <div className="buses-modal__field">
+                  <label className="form-label">Driver</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. Rajesh"
+                    value={formData.driver}
+                    onChange={e => updateField('driver', e.target.value)}
+                  />
+                </div>
+
+                {/* Contact */}
+                <div className="buses-modal__field">
+                  <label className="form-label">Contact</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. +91 9876543210"
+                    value={formData.contact}
+                    onChange={e => updateField('contact', e.target.value)}
+                  />
+                </div>
+
+                {/* License */}
+                <div className="buses-modal__field">
+                  <label className="form-label">License</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. AD 32545"
+                    value={formData.license}
+                    onChange={e => updateField('license', e.target.value)}
+                  />
+                </div>
+
               </div>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 mt-5 rounded font-bold transition-colors"
-              style={{ opacity: saving ? 0.65 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
+
+              {/* ── Bus-Specific Stops Section ── */}
+              <div className="buses-modal__stops-header" style={{
+                marginTop: '16px',
+                marginBottom: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderTop: '1px solid var(--color-border-soft)',
+                paddingTop: '14px',
+              }}>
+                <label className="form-label" style={{ margin: 0 }}>
+                  BUS STOPS (STOPPING PATTERN)
+                </label>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--color-blue-light)',
+                  color: 'var(--color-blue-dark)',
+                }}>
+                  {formData.stops.length} STOPS
+                </span>
+              </div>
+
+              <div className="buses-modal__stops-list" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                maxHeight: '180px',
+                overflowY: 'auto',
+                paddingRight: '4px',
+                marginBottom: '12px',
+              }}>
+                {formData.stops.map((stop, idx) => (
+                  <div key={idx} className="buses-modal__stop-row" style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: '#f7f9fc',
+                    padding: '6px 10px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-border-soft)',
+                    boxShadow: 'var(--shadow-inset)',
+                  }}>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: 'var(--color-text-muted)',
+                      minWidth: '22px',
+                    }}>
+                      {idx + 1}.
+                    </span>
+                    <input
+                      className="form-input"
+                      style={{
+                        height: '34px',
+                        fontSize: '12.5px',
+                        padding: '0 10px',
+                        flex: 1,
+                      }}
+                      placeholder={`e.g. STOP ${idx + 1}`}
+                      value={stop.stop_name}
+                      onChange={(e) => handleUpdateStopName(idx, e.target.value)}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        style={{ width: '28px', height: '28px', opacity: idx === 0 ? 0.4 : 1 }}
+                        onClick={() => handleMoveStop(idx, 'up')}
+                        disabled={idx === 0}
+                        title="Move Up"
+                      >
+                        <ChevronUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        style={{ width: '28px', height: '28px', opacity: idx === formData.stops.length - 1 ? 0.4 : 1 }}
+                        onClick={() => handleMoveStop(idx, 'down')}
+                        disabled={idx === formData.stops.length - 1}
+                        title="Move Down"
+                      >
+                        <ChevronDown size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn--danger"
+                        style={{ width: '28px', height: '28px' }}
+                        onClick={() => handleRemoveStop(idx)}
+                        title="Remove Stop"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {formData.stops.length === 0 && (
+                  <div style={{
+                    textAlign: 'center',
+                    fontSize: '12px',
+                    color: 'var(--color-text-faint)',
+                    padding: '12px 0',
+                    background: '#f7fafc',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px dashed var(--color-border)',
+                  }}>
+                    No bus-specific stops added yet. Click "+ Add Stop" below.
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{
+                  height: '36px',
+                  fontSize: '12.5px',
+                  width: '100%',
+                  marginBottom: '16px',
+                  justifyContent: 'center',
+                }}
+                onClick={handleAddStop}
+              >
+                <Plus size={15} /> Add Stop
+              </button>
+
+              {/* API error */}
+              {apiError && (
+                <div className="buses-modal__error">{apiError}</div>
+              )}
+
+              {/* Save button */}
+              <button
+                id="save-bus-btn"
+                className="btn-primary buses-modal__save-btn"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── Delete-confirmation modal ── */}
+      {/* ── Delete confirmation modal ─────────────── */}
       {busToDelete && (
         <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 10000,
-            background: 'rgba(15, 23, 42, 0.55)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '24px', boxSizing: 'border-box',
-            animation: 'overlay-fade-in 0.2s ease',
-          }}
+          className="modal-overlay"
           onClick={handleDeleteCancel}
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-bus-title"
         >
           <div
-            style={{
-              position: 'relative',
-              background: '#ffffff',
-              borderRadius: '16px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.22), 0 4px 16px rgba(0,0,0,0.10)',
-              padding: '32px 28px 28px',
-              width: '100%',
-              maxWidth: '380px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              animation: 'modal-scale-in 0.25s cubic-bezier(0.34,1.28,0.64,1)',
-            }}
+            className="modal-panel buses-delete-modal"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close ✕ */}
-            <button
-              onClick={handleDeleteCancel}
-              style={{
-                position: 'absolute', top: '14px', right: '14px',
-                width: '28px', height: '28px', borderRadius: '8px',
-                border: '1px solid #e8edf4', background: '#f7fafc',
-                color: '#a0aec0', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', cursor: 'pointer',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#fff5f5'; e.currentTarget.style.color = '#e53e3e'; e.currentTarget.style.borderColor = '#fed7d7'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#f7fafc'; e.currentTarget.style.color = '#a0aec0'; e.currentTarget.style.borderColor = '#e8edf4'; }}
-            >
-              <X size={14} />
+            {/* Close */}
+            <button className="modal-close-btn" onClick={handleDeleteCancel} title="Close">
+              <X size={14} strokeWidth={2.5} />
             </button>
 
-            {/* Red icon badge */}
-            <div style={{
-              width: '60px', height: '60px', borderRadius: '50%',
-              background: '#fff5f5', border: '2px solid #fed7d7',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginBottom: '18px',
-            }}>
+            {/* Red icon */}
+            <div className="buses-delete-modal__icon">
               <Trash2 size={28} color="#ef4444" strokeWidth={2} />
             </div>
 
-            {/* Title */}
-            <h2 id="delete-bus-title" style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: 700, color: '#1a202c', letterSpacing: '-0.01em' }}>
-              Delete Bus
-            </h2>
-
-            {/* Message */}
-            <p style={{ margin: '0 0 24px', fontSize: '14px', color: '#718096', lineHeight: 1.6, maxWidth: '280px' }}>
-              Are you sure to delete <strong style={{ color: '#1a202c' }}>Bus {busToDelete.busNo}</strong> ({busToDelete.route})? This action cannot be undone.
+            <h2 id="delete-bus-title" className="buses-delete-modal__title">Delete Bus</h2>
+            <p className="buses-delete-modal__msg">
+              Are you sure you want to delete <strong>Bus {busToDelete.busNo}</strong> ({busToDelete.route})?
+              This action cannot be undone.
             </p>
 
-            {/* Buttons */}
-            <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+            <div className="buses-delete-modal__actions">
               <button
                 ref={cancelDeleteRef}
+                className="btn-ghost"
                 onClick={handleDeleteCancel}
-                style={{
-                  flex: 1, height: '42px', borderRadius: '10px',
-                  border: '1px solid #e2e8f0', background: '#f7fafc',
-                  color: '#4a5568', fontSize: '14px', fontWeight: 600,
-                  cursor: 'pointer', transition: 'background 0.18s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#edf2f7'; e.currentTarget.style.borderColor = '#cbd5e0'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = '#f7fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
               >
                 Cancel
               </button>
               <button
+                className="btn-danger"
                 onClick={handleDeleteConfirm}
                 disabled={deleting}
-                style={{
-                  flex: 1, height: '42px', borderRadius: '10px',
-                  border: 'none', background: '#ef4444',
-                  color: '#ffffff', fontSize: '14px', fontWeight: 600,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', gap: '6px',
-                  boxShadow: '0 2px 8px rgba(239,68,68,0.25)',
-                  transition: 'background 0.18s ease, box-shadow 0.18s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(239,68,68,0.35)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(239,68,68,0.25)'; }}
               >
                 <Trash2 size={14} strokeWidth={2} />
-                Delete
+                {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Page-scoped styles ────────────────────── */}
+      <style>{`
+        .buses-page {
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          overflow: hidden;
+        }
+
+        /* Toolbar */
+        .buses-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-shrink: 0;
+        }
+
+        .buses-search {
+          flex: 1;
+          max-width: 440px;
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .buses-search__icon {
+          position: absolute;
+          left: 13px;
+          color: var(--color-text-faint);
+          pointer-events: none;
+          flex-shrink: 0;
+        }
+
+        .buses-search__input {
+          width: 100%;
+          height: 42px;
+          padding: 0 14px 0 40px;
+          border-radius: var(--radius-md);
+          border: 1.5px solid var(--color-border);
+          background: var(--color-card-bg);
+          color: var(--color-text-primary);
+          font-size: 13.5px;
+          font-weight: 500;
+          outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: var(--shadow-card);
+        }
+
+        .buses-search__input::placeholder { color: var(--color-text-faint); }
+
+        .buses-search__input:hover {
+          border-color: #c8d5e0;
+        }
+
+        .buses-search__input:focus {
+          border-color: var(--color-blue);
+          box-shadow: 0 0 0 3px rgba(52,152,219,0.12), var(--shadow-card);
+        }
+
+        .buses-add-btn {
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
+
+        /* Table wrapper */
+        .buses-table-wrap {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+        }
+
+        .buses-table-container {
+          background: var(--color-card-bg);
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--color-border);
+          box-shadow: var(--shadow-card);
+          overflow: hidden;
+        }
+
+        .buses-table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+
+        .buses-table__th {
+          padding: 12px 14px;
+          text-align: center;
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--color-text-faint);
+          background: #f7f9fc;
+          border-bottom: 1px solid var(--color-border-soft);
+          white-space: nowrap;
+        }
+
+        .buses-table__row {
+          transition: background var(--transition-fast);
+        }
+
+        .buses-table__row:hover { background: #f7fafc; }
+
+        .buses-table__row:not(:last-child) td {
+          border-bottom: 1px solid var(--color-border-soft);
+        }
+
+        .buses-table__td {
+          padding: 13px 14px;
+          text-align: center;
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--color-text-secondary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          vertical-align: middle;
+        }
+
+        .buses-table__td--id {
+          font-weight: 700;
+          color: var(--color-blue);
+        }
+
+        .buses-table__td--actions { overflow: visible; }
+
+        .buses-actions {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+
+        .buses-actions .icon-btn {
+          width: 30px;
+          height: 30px;
+          border-radius: var(--radius-sm);
+        }
+
+        .buses-table__empty {
+          padding: 48px 16px;
+          text-align: center;
+          color: var(--color-text-faint);
+          font-size: 13.5px;
+          font-weight: 500;
+        }
+
+        /* Modal */
+        .buses-modal {
+          max-width: 500px;
+          padding: 0;
+          overflow: hidden;
+        }
+
+        .buses-modal__header {
+          padding: 22px 24px 16px;
+          border-bottom: 1px solid var(--color-border-soft);
+        }
+
+        .buses-modal__title {
+          margin: 0;
+          font-size: 17px;
+          font-weight: 700;
+          color: var(--color-text-primary);
+          letter-spacing: -0.01em;
+        }
+
+        .buses-modal__body {
+          padding: 20px 24px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .buses-modal__grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px 16px;
+        }
+
+        .buses-modal__field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .buses-modal__loading {
+          height: 40px;
+          display: flex;
+          align-items: center;
+          padding: 0 14px;
+          font-size: 13px;
+          color: var(--color-text-muted);
+          border-radius: var(--radius-sm);
+          border: 1.5px solid var(--color-border);
+          background: #f7f9fc;
+        }
+
+        .buses-modal__routes-error {
+          height: 40px;
+          display: flex;
+          align-items: center;
+          padding: 0 14px;
+          font-size: 12.5px;
+          color: #dc2626;
+          border-radius: var(--radius-sm);
+          border: 1.5px solid #fed7d7;
+          background: #fff5f5;
+        }
+
+        .buses-modal__select-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .buses-modal__select-icon {
+          position: absolute;
+          right: 12px;
+          color: var(--color-text-faint);
+          pointer-events: none;
+        }
+
+        .buses-modal__error {
+          margin-top: 4px;
+          padding: 10px 14px;
+          background: rgba(239,68,68,0.08);
+          border: 1px solid rgba(239,68,68,0.3);
+          border-radius: var(--radius-sm);
+          color: #dc2626;
+          font-size: 13px;
+          text-align: center;
+        }
+
+        .buses-modal__save-btn {
+          width: 100%;
+          margin-top: 4px;
+        }
+
+        /* Delete modal */
+        .buses-delete-modal {
+          padding: 32px 28px 28px;
+          max-width: 380px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+        }
+
+        .buses-delete-modal__icon {
+          width: 60px;
+          height: 60px;
+          border-radius: var(--radius-full);
+          background: #fff5f5;
+          border: 2px solid #fed7d7;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 18px;
+        }
+
+        .buses-delete-modal__title {
+          margin: 0 0 10px;
+          font-size: 19px;
+          font-weight: 700;
+          color: var(--color-text-primary);
+          letter-spacing: -0.01em;
+        }
+
+        .buses-delete-modal__msg {
+          margin: 0 0 24px;
+          font-size: 13.5px;
+          color: var(--color-text-muted);
+          line-height: 1.6;
+          max-width: 280px;
+        }
+
+        .buses-delete-modal__actions {
+          display: flex;
+          gap: 12px;
+          width: 100%;
+        }
+
+        .buses-delete-modal__actions .btn-ghost,
+        .buses-delete-modal__actions .btn-danger {
+          flex: 1;
+        }
+      `}</style>
     </div>
   );
 };

@@ -14,16 +14,33 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://bustransit-g4ks.onrend
 // ── Map Supabase column names → frontend field names ─────────────────────
 const mapFromDb = (row) => ({
   id: row.id,
-  busId: row.bus_number || '',
-  busNo: row.registration_number || '',
-  driver: row.driver_name || '',
-  contact: row.driver_phone || '',
-  route: row.route_name || '',
+  busId: row.bus_number ? String(row.bus_number).toUpperCase() : '',
+  busNo: row.registration_number ? String(row.registration_number).replace(/\s+/g, '').toUpperCase() : '',
+  driver: row.driver_name ? String(row.driver_name).toUpperCase() : '',
+  contact: row.driver_phone ? String(row.driver_phone).toUpperCase() : '',
+  route: row.route_name ? String(row.route_name).toUpperCase() : '',
   route_id: row.route_id || '',
-  license: row.license_number || '',
+  license: row.license_number ? String(row.license_number).toUpperCase() : '',
   status: row.status || 'Pending (GPS)',
   latitude: row.latitude,
   longitude: row.longitude,
+  stops: Array.isArray(row.stops)
+    ? row.stops.map((s, idx) => ({
+        id: s.id || idx,
+        stop_name: (s.stop_name || s || '').toUpperCase(),
+        stop_order: s.stop_order || idx + 1,
+        latitude: s.latitude || null,
+        longitude: s.longitude || null,
+      }))
+    : (Array.isArray(row.bus_stops)
+        ? row.bus_stops.map((s, idx) => ({
+            id: s.id || idx,
+            stop_name: (s.stop_name || s || '').toUpperCase(),
+            stop_order: s.stop_order || idx + 1,
+            latitude: s.latitude || null,
+            longitude: s.longitude || null,
+          }))
+        : []),
 });
 
 /**
@@ -103,128 +120,94 @@ export default function App() {
     );
   }
 
+  // Initials for avatar
+  const initials = userEmail ? userEmail.slice(0, 2).toUpperCase() : 'AD';
+
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', backgroundColor: '#f5f5f5' }}>
+    <div className="app-shell">
 
       {/* ── Sidebar ─────────────────────────────────────────────────── */}
-      <div style={{
-        width: sidebarOpen ? '250px' : '70px',
-        backgroundColor: '#2c3e50',
-        color: 'white',
-        transition: 'width 0.3s ease',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        {/* Logo / Toggle */}
-        <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {sidebarOpen && <h2 style={{ margin: 0, fontSize: '18px' }}>AmcetTransit</h2>}
+      <aside className={`app-sidebar${sidebarOpen ? ' app-sidebar--open' : ' app-sidebar--collapsed'}`}>
+        {/* Logo / Toggle row */}
+        <div className="sidebar-brand">
+          {sidebarOpen && (
+            <span className="sidebar-brand__name">AmcetTransit</span>
+          )}
           <button
+            id="sidebar-toggle"
+            className="sidebar-toggle-btn"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
-            <Menu size={24} />
+            <Menu size={20} strokeWidth={2} />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav style={{ padding: '20px 0', flex: 1 }}>
+        <nav className="sidebar-nav">
           {navigationItems.map(item => {
             const IconComponent = item.icon;
+            const isActive = currentPage === item.name;
             return (
               <div
                 key={item.name}
+                id={`nav-${item.name.toLowerCase()}`}
+                className={`sidebar-nav__item${isActive ? ' sidebar-nav__item--active' : ''}`}
                 onClick={() => setCurrentPage(item.name)}
-                style={{
-                  padding: '15px 20px',
-                  cursor: 'pointer',
-                  backgroundColor: currentPage === item.name ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  borderLeft: currentPage === item.name ? '4px solid #3498db' : '4px solid transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '15px',
-                  transition: 'all 0.2s ease',
-                  fontSize: '14px',
-                  whiteSpace: 'nowrap',
-                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && setCurrentPage(item.name)}
+                aria-current={isActive ? 'page' : undefined}
+                title={!sidebarOpen ? item.name : undefined}
               >
-                <IconComponent size={20} />
-                {sidebarOpen && item.name}
+                <span className="sidebar-nav__icon">
+                  <IconComponent size={19} strokeWidth={2} />
+                </span>
+                {sidebarOpen && (
+                  <span className="sidebar-nav__label">{item.name}</span>
+                )}
               </div>
             );
           })}
         </nav>
-      </div>
+      </aside>
 
-      {/* ── Main Content ──────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* ── Main Content ────────────────────────────────────────────── */}
+      <div className="app-main">
 
         {/* Header */}
-        <header style={{
-          backgroundColor: 'white',
-          padding: '20px 30px',
-          borderBottom: '1px solid #ddd',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        }}>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#2c3e50' }}>{currentPage}</h1>
+        <header className="app-header">
+          <h1 className="app-header__title">{currentPage}</h1>
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {/* Logout button */}
+          <div className="app-header__actions">
+            {/* Logout icon button */}
             <button
+              id="logout-btn"
               title="Logout"
+              className="icon-btn icon-btn--danger"
               onClick={() => setShowLogoutModal(true)}
-              style={{
-                width: '38px', height: '38px', borderRadius: '10px',
-                border: '1px solid #e2e8f0', backgroundColor: '#ffffff',
-                color: '#718096', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', cursor: 'pointer',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                transition: 'background-color 0.2s, color 0.2s, box-shadow 0.2s, border-color 0.2s',
-                flexShrink: 0,
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = '#fff5f5';
-                e.currentTarget.style.color = '#e53e3e';
-                e.currentTarget.style.borderColor = '#fed7d7';
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(229,62,62,0.14)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.backgroundColor = '#ffffff';
-                e.currentTarget.style.color = '#718096';
-                e.currentTarget.style.borderColor = '#e2e8f0';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
-              }}
             >
-              <LogOut size={18} strokeWidth={2} />
+              <LogOut size={17} strokeWidth={2} />
             </button>
 
             {/* Profile avatar */}
             <div
+              id="profile-avatar"
+              className="app-header__avatar"
               onClick={() => setShowProfileModal(true)}
-              style={{
-                width: '38px', height: '38px', borderRadius: '50%',
-                backgroundColor: '#3498db', color: 'white',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 'bold', cursor: 'pointer', fontSize: '14px',
-                boxShadow: '0 1px 3px rgba(52,152,219,0.3)',
-              }}
+              role="button"
+              tabIndex={0}
+              title="View profile"
             >
-              AD
+              {initials}
             </div>
           </div>
         </header>
 
         {/* Page content */}
-        <div style={{
-          flex: 1, overflow: 'hidden', display: 'flex',
-          flexDirection: 'column', padding: '20px 30px',
-          backgroundColor: '#f5f5f5',
-        }}>
+        <main className="app-content">
           {renderPage()}
-        </div>
+        </main>
       </div>
 
       {/* Logout modal */}

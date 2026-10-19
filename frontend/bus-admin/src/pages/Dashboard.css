@@ -1,92 +1,102 @@
-/* ===================================================
-   Fleet Management Dashboard — Dashboard.css
-   Color palette: #2c3e50 (sidebar), #3498db (accent), #f5f5f5 (bg)
-   =================================================== */
+/* ============================================================
+   Dashboard.css — Dashboard page + shared right-panel styles
+   ============================================================ */
 
-/* ── Page header ────────────────────────────────── */
-.dash-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex-shrink: 0;
-  /* Scope to the left column width so overview text doesn't span full row */
-  width: 60%;
-}
-
-.dash-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: #718096;
-  letter-spacing: 0.02em;
-}
-
-/* ── Two-column grid ────────────────────────────── */
+/* ── Page layout ──────────────────────────────────────────── */
 .dashboard-content {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
+.dash-header {
+  flex-shrink: 0;
+  margin-bottom: 14px;
+  width: 62%;
+}
+
+.dash-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── Two-column grid ──────────────────────────────────────── */
 .dash-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 60% 40%;
-  gap: 20px;
+  grid-template-columns: 60% 1fr;
+  gap: 18px;
 }
 
-/* ── Left column ────────────────────────────────── */
 .dash-left {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   min-height: 0;
   overflow: hidden;
 }
 
-/* ── Right column — hosts BusList + BusInfoCard ────── */
 .dash-right {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
-/* ── KPI row ────────────────────────────────────── */
+.dash-right::-webkit-scrollbar { width: 4px; }
+.dash-right::-webkit-scrollbar-track { background: transparent; }
+.dash-right::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 4px; }
+
+/* ── KPI Row ──────────────────────────────────────────────── */
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 14px;
   flex-shrink: 0;
 }
 
-/* KPI card */
+/* KPI Card */
 .kpi-card {
-  background: #ffffff;
-  border-radius: 14px;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
   padding: 20px 22px;
-  border: 1px solid #e8edf4;
-  box-shadow: 0 2px 8px rgba(44, 62, 80, 0.06),
-    0 1px 2px rgba(44, 62, 80, 0.04);
+  border: 1px solid rgba(255,255,255,0.85);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
   position: relative;
   overflow: hidden;
 }
 
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
 
 .kpi-card:hover {
-  box-shadow: 0 6px 20px rgba(44, 62, 80, 0.10);
+  box-shadow: var(--shadow-card-hover);
   transform: translateY(-2px);
 }
+
+.kpi-card:hover::before { opacity: 1; }
+
+.kpi-card--total::before  { background: var(--color-blue); }
+.kpi-card--active::before { background: var(--color-active); }
+.kpi-card--students::before { background: #7c3aed; }
 
 .kpi-card__top {
   display: flex;
@@ -95,11 +105,11 @@
 }
 
 .kpi-card__label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #718096;
+  color: var(--color-text-faint);
 }
 
 .kpi-card__icon {
@@ -109,46 +119,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  box-shadow: inset 2px 2px 4px rgba(166,180,200,0.25), inset -2px -2px 4px #ffffff;
 }
 
-.kpi-card--total .kpi-card__icon {
-  background: #ebf5fb;
-}
-
-.kpi-card--active .kpi-card__icon {
-  background: #f0fff4;
-}
-
-.kpi-card--students .kpi-card__icon {
-  background: #f5f3ff;
-}
+.kpi-card--total .kpi-card__icon   { background: #ebf5fb; }
+.kpi-card--active .kpi-card__icon  { background: #f0fff4; }
+.kpi-card--students .kpi-card__icon{ background: #f5f3ff; }
 
 .kpi-card__value {
-  font-size: 40px;
+  font-size: 38px;
   font-weight: 800;
   line-height: 1;
-  color: #000000;
-  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  letter-spacing: -0.03em;
 }
 
 .kpi-card__sub {
-  font-size: 12px;
-  color: #a0aec0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  font-size: 11.5px;
+  color: var(--color-text-faint);
+  font-weight: 500;
 }
 
-
-
-
-/* ── Map card ───────────────────────────────────── */
+/* ── Map Card ─────────────────────────────────────────────── */
 .map-card {
-  background: #ffffff;
-  border-radius: 14px;
-  border: 1px solid #e8edf4;
-  box-shadow: 0 2px 8px rgba(44, 62, 80, 0.06);
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -160,10 +157,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 22px 14px;
-  border-bottom: 1px solid #f0f4f8;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-wrap: wrap;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .map-card__title {
@@ -174,22 +172,25 @@
 
 .map-card__title h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--color-text-secondary);
+  letter-spacing: -0.01em;
 }
 
 .map-card__title-icon {
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  box-shadow: 0 2px 6px rgba(52,152,219,0.28);
+  flex-shrink: 0;
 }
 
+/* Map legend */
 .map-legend {
   display: flex;
   align-items: center;
@@ -202,15 +203,39 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #718096;
+  color: var(--color-text-muted);
   font-weight: 500;
 }
 
 .map-legend__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
+}
+
+/* Expand icon button */
+.map-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: #f7fafc;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+              border-color var(--transition-fast), box-shadow var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.map-expand-btn:hover {
+  background: var(--color-blue-light);
+  color: var(--color-blue);
+  border-color: var(--color-blue);
+  box-shadow: 0 2px 6px rgba(52,152,219,0.18);
 }
 
 .map-card__body {
@@ -220,65 +245,28 @@
   overflow: hidden;
 }
 
-.map-card__body>div,
+.map-card__body > div,
 .map-card__body .leaflet-container {
   width: 100% !important;
   height: 100% !important;
 }
 
-
-
-
-/* ── Expand icon button in card header ──────────── */
-.map-expand-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #f7fafc;
-  color: #718096;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-  flex-shrink: 0;
-}
-
-.map-expand-btn:hover {
-  background: #ebf5fb;
-  color: #2980b9;
-  border-color: #3498db;
-}
-
-/* ── Fullscreen overlay ──────────────────────────── */
+/* ── Fullscreen Map Overlay ───────────────────────────────── */
 @keyframes map-overlay-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes map-panel-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 .map-fullscreen-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(15,23,42,0.72);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -292,16 +280,15 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.40);
-  animation: map-panel-in 0.25s cubic-bezier(0.34, 1.28, 0.64, 1);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.40);
+  animation: map-panel-in 0.25s cubic-bezier(0.34,1.28,0.64,1);
 }
 
-/* Close button — top-right corner */
 .map-fullscreen-close {
   position: absolute;
   top: 14px;
@@ -309,16 +296,16 @@
   z-index: 10;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: none;
-  background: rgba(44, 62, 80, 0.88);
+  background: rgba(44,62,80,0.88);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.30);
+  transition: background var(--transition-fast), transform var(--transition-fast);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.30);
 }
 
 .map-fullscreen-close:hover {
@@ -326,51 +313,47 @@
   transform: scale(1.08);
 }
 
-/* Fullscreen header strip */
 .map-fullscreen-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px 14px;
-  border-bottom: 1px solid #f0f4f8;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
-  padding-right: 60px;
-  /* room for close button */
+  padding-right: 58px;
 }
 
-/* Fullscreen map body fills remaining space */
 .map-fullscreen-body {
   flex: 1;
   min-height: 0;
   position: relative;
 }
 
-.map-fullscreen-body>div,
+.map-fullscreen-body > div,
 .map-fullscreen-body .leaflet-container {
   width: 100% !important;
   height: 100% !important;
 }
 
-/* ── Bus List card ────────────────────────── */
+/* ── Bus List Card ────────────────────────────────────────── */
 .bus-list-card {
-  background: #ffffff;
-  border-radius: 14px;
-  border: 1px solid #e8edf4;
-  box-shadow: 0 2px 8px rgba(44, 62, 80, 0.06);
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 1;
-  /* take all remaining height in dash-right */
-  min-height: 0;
+  flex: 1 1 200px;
+  min-height: 180px;
 }
 
 .bus-list-card__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 22px 14px;
-  border-bottom: 1px solid #f0f4f8;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
 }
 
@@ -382,48 +365,50 @@
 
 .bus-list-card__title h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--color-text-secondary);
+  letter-spacing: -0.01em;
 }
 
 .bus-list-card__title-icon {
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(52,152,219,0.28);
 }
 
 .bus-list-card__count {
   font-size: 10px;
   font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 20px;
-  background: #ebf5fb;
-  color: #2980b9;
-  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-blue-light);
+  color: var(--color-blue-dark);
+  letter-spacing: 0.05em;
 }
 
-/* Column header labels */
+/* Column headers */
 .bus-list__cols {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 20px;
+  padding: 6px 16px;
   background: #f7fafc;
-  border-bottom: 1px solid #f0f4f8;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
 }
 
 .bus-list__cols span {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #a0aec0;
+  color: var(--color-text-faint);
 }
 
 /* Scrollable list area */
@@ -433,54 +418,39 @@
   overscroll-behavior: contain;
 }
 
-.bus-list__body::-webkit-scrollbar {
-  width: 4px;
-}
-
-.bus-list__body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.bus-list__body::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
-  border-radius: 4px;
-}
+.bus-list__body::-webkit-scrollbar { width: 4px; }
+.bus-list__body::-webkit-scrollbar-track { background: transparent; }
+.bus-list__body::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 4px; }
 
 /* Individual bus row */
 .bus-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
-  height: 42px;
-  border-bottom: 1px solid #f7fafc;
+  padding: 0 16px;
+  height: 38px;
+  border-bottom: 1px solid var(--color-border-soft);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background var(--transition-fast);
   user-select: none;
   flex-shrink: 0;
 }
 
-.bus-row:last-child {
-  border-bottom: none;
-}
+.bus-row:last-child { border-bottom: none; }
 
-.bus-row:hover {
-  background-color: #f0f4f8;
-}
+.bus-row:hover { background: #f5f8fb; }
 
 .bus-row--selected {
-  background-color: #ebf5fb;
-  border-left: 3px solid #3498db;
+  background: var(--color-blue-light);
+  border-left: 3px solid var(--color-blue);
 }
 
-.bus-row--selected:hover {
-  background-color: #dbeafe;
-}
+.bus-row--selected:hover { background: #dbeafe; }
 
 .bus-row__number {
   font-size: 12.5px;
   font-weight: 600;
-  color: #2d3748;
+  color: var(--color-text-secondary);
   letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -489,7 +459,7 @@
 
 .bus-row__route {
   font-weight: 400;
-  color: #a0aec0;
+  color: var(--color-text-faint);
   font-size: 11.5px;
 }
 
@@ -497,47 +467,17 @@
   font-size: 10.5px;
   font-weight: 700;
   padding: 2px 9px;
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
 
-
-
-/* ── Responsive ─────────────────────────────────── */
-@media (max-width: 1100px) {
-  .dash-grid {
-    grid-template-columns: 60% 40%;
-  }
-}
-
-@media (max-width: 900px) {
-  .dash-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dash-right {
-    display: none;
-  }
-}
-
-@media (max-width: 640px) {
-  .kpi-row {
-    grid-template-columns: 1fr;
-  }
-
-  .bus-list-card {
-    height: auto;
-    max-height: calc(100vh - 200px);
-  }
-}
-
-/* ── Bus Info Card (below Bus List) ─────────────── */
+/* ── Bus Info Card ────────────────────────────────────────── */
 .bus-info-card {
-  background: #ffffff;
-  border-radius: 14px;
-  border: 1px solid #e8edf4;
-  box-shadow: 0 2px 8px rgba(44, 62, 80, 0.06);
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -548,8 +488,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 22px 12px;
-  border-bottom: 1px solid #f0f4f8;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
 }
 
@@ -561,90 +501,197 @@
 
 .bus-info-card__title h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--color-text-secondary);
+  letter-spacing: -0.01em;
 }
 
 .bus-info-card__title-icon {
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(52,152,219,0.28);
 }
 
 .bus-info-card__badge {
   font-size: 10px;
   font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 20px;
-  background: #ebf5fb;
-  color: #2980b9;
-  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-blue-light);
+  color: var(--color-blue-dark);
+  letter-spacing: 0.05em;
 }
 
 .bus-info-card__body {
-  padding: 14px 20px 16px;
+  padding: 10px 14px 12px;
 }
 
-/* ── Info rows ──────────────────────────────────── */
+/* Info grid */
 .bus-info__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.bus-info__item {
   display: flex;
   flex-direction: column;
-  gap: 0;
-}
-
-.bus-info__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 0;
-  border-bottom: 1px solid #f7fafc;
-  gap: 12px;
-}
-
-.bus-info__row:last-child {
-  border-bottom: none;
+  gap: 2px;
+  padding: 6px 10px;
+  background: #f7f9fc;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.7);
+  box-shadow: inset 2px 2px 5px rgba(166,180,200,0.28), inset -2px -2px 5px #ffffff;
 }
 
 .bus-info__label {
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #a0aec0;
-  flex-shrink: 0;
-  min-width: 110px;
+  letter-spacing: 0.07em;
+  color: var(--color-text-faint);
 }
 
 .bus-info__value {
   font-size: 12.5px;
   font-weight: 600;
-  color: #2d3748;
-  text-align: right;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── Empty state ────────────────────────────────── */
+/* ── Stops pill + tooltip ──────────────────────────────────── */
+
+/* Wrapper that holds the pill and positions the tooltip */
+.bus-info__stops-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Compact count pill */
+.bus-info__stops-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-blue, #3498db);
+  background: rgba(52, 152, 219, 0.10);
+  border: 1px solid rgba(52, 152, 219, 0.22);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: default;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+
+/* Tooltip — hidden by default */
+.bus-info__stops-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 9999;
+  min-width: 220px;
+  max-width: 320px;
+  background: #1e2a3a;
+  color: #e8f0f8;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
+  padding: 10px 14px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* Caret arrow pointing down */
+.bus-info__stops-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  border: 6px solid transparent;
+  border-top-color: #1e2a3a;
+}
+
+/* Show tooltip on pill hover */
+.bus-info__stops-wrap:hover .bus-info__stops-pill {
+  background: rgba(52, 152, 219, 0.18);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.14);
+}
+
+.bus-info__stops-wrap:hover .bus-info__stops-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Inner layout — vertical numbered list */
+.bus-info__stops-tooltip-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  counter-reset: stop-counter;
+}
+
+.bus-info__stops-tooltip-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e8f0f8;
+  counter-increment: stop-counter;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.bus-info__stops-tooltip-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.bus-info__stops-tooltip-item::before {
+  content: counter(stop-counter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(52, 152, 219, 0.25);
+  color: rgba(52, 152, 219, 0.9);
+  font-size: 9.5px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+
 .bus-info__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 12px 0 8px;
+  gap: 8px;
+  padding: 10px 0 6px;
 }
 
 .bus-info__empty-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
   background: #f7fafc;
-  border: 1px solid #e8edf4;
+  border: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -653,45 +700,45 @@
 .bus-info__empty-text {
   margin: 0;
   font-size: 12px;
-  color: #a0aec0;
+  color: var(--color-text-faint);
   text-align: center;
-  line-height: 1.55;
-  max-width: 220px;
+  line-height: 1.5;
+  max-width: 200px;
 }
 
-/* ── Track Location button ─────────────────────────────── */
+/* Track Location button */
 .track-location-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 100%;
-  margin-top: 14px;
-  padding: 10px 16px;
-  border-radius: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   border: none;
-  background: linear-gradient(135deg, #3498db, #2980b9);
+  background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));
   color: #ffffff;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.03em;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.30);
-  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+  box-shadow: var(--shadow-btn);
+  transition: background var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-fast);
 }
 
 .track-location-btn:hover {
-  background: linear-gradient(135deg, #2980b9, #1a6fa8);
-  box-shadow: 0 4px 16px rgba(52, 152, 219, 0.42);
+  background: linear-gradient(135deg, var(--color-blue-dark), #1a6fa8);
+  box-shadow: var(--shadow-btn-hover);
   transform: translateY(-1px);
 }
 
 .track-location-btn:active {
-  transform: translateY(0px) scale(0.98);
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.25);
+  transform: scale(0.98);
+  box-shadow: var(--shadow-btn);
 }
 
-/* ── TrackLocationView overlay ─────────────────────────── */
+/* ── TrackLocationView overlay ────────────────────────────── */
 @keyframes track-overlay-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -706,7 +753,7 @@
   position: fixed;
   inset: 0;
   z-index: 10000;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(15,23,42,0.72);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
@@ -720,25 +767,24 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.40);
-  animation: track-panel-in 0.25s cubic-bezier(0.34, 1.28, 0.64, 1);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.40);
+  animation: track-panel-in 0.25s cubic-bezier(0.34,1.28,0.64,1);
 }
 
-/* Header strip */
 .track-header {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 14px 20px;
-  border-bottom: 1px solid #f0f4f8;
+  border-bottom: 1px solid var(--color-border-soft);
   flex-shrink: 0;
-  background: #ffffff;
-  padding-right: 62px; /* room for close button */
+  background: var(--color-card-bg);
+  padding-right: 62px;
 }
 
 .track-header__left {
@@ -758,9 +804,9 @@
 
 .track-header__title h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
-  color: #2d3748;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -769,42 +815,40 @@
 .track-header__icon {
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-blue), var(--color-blue-dark));
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(52,152,219,0.28);
   flex-shrink: 0;
 }
 
-
-/* Status badge in tracking header */
 .track-status-badge {
   font-size: 10px;
   font-weight: 700;
   padding: 3px 10px;
-  border-radius: 20px;
+  border-radius: var(--radius-full);
   letter-spacing: 0.05em;
   flex-shrink: 0;
 }
 
-/* Close X button */
 .track-close-btn {
   position: absolute;
   top: 14px;
   right: 14px;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: none;
-  background: rgba(44, 62, 80, 0.88);
+  background: rgba(44,62,80,0.88);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.30);
+  transition: background var(--transition-fast), transform var(--transition-fast);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.30);
 }
 
 .track-close-btn:hover {
@@ -812,7 +856,6 @@
   transform: scale(1.08);
 }
 
-/* Body: map on left, info panel on right */
 .track-body {
   flex: 1;
   min-height: 0;
@@ -833,39 +876,35 @@
   height: 100% !important;
 }
 
-/* Side info panel */
 .track-info-panel {
   width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border-left: 1px solid #e8edf4;
-  background: #ffffff;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-card-bg);
   overflow-y: auto;
-  padding: 18px 18px 20px;
+  padding: 18px 16px 20px;
+  gap: 0;
 }
 
-.track-info-panel::-webkit-scrollbar {
-  width: 4px;
-}
+.track-info-panel::-webkit-scrollbar { width: 4px; }
 .track-info-panel::-webkit-scrollbar-track { background: transparent; }
 .track-info-panel::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 4px; }
 
-/* Hero: avatar + bus label */
 .track-info__hero {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 14px;
-  border-bottom: 1px solid #f0f4f8;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
 .track-info__avatar {
   width: 38px;
   height: 38px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -876,19 +915,18 @@
 }
 
 .track-info__buslabel {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #1a202c;
+  color: var(--color-text-primary);
   line-height: 1.3;
 }
 
 .track-info__subroute {
   font-size: 11px;
-  color: #718096;
+  color: var(--color-text-muted);
   margin-top: 2px;
 }
 
-/* Info rows */
 .track-info__rows {
   display: flex;
   flex-direction: column;
@@ -901,19 +939,17 @@
   justify-content: space-between;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid #f7fafc;
+  border-bottom: 1px solid var(--color-border-soft);
 }
 
-.track-info__row:last-child {
-  border-bottom: none;
-}
+.track-info__row:last-child { border-bottom: none; }
 
 .track-info__label {
   font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #a0aec0;
+  color: var(--color-text-faint);
   flex-shrink: 0;
   min-width: 80px;
   padding-top: 1px;
@@ -922,29 +958,28 @@
 .track-info__value {
   font-size: 12px;
   font-weight: 600;
-  color: #2d3748;
+  color: var(--color-text-secondary);
   text-align: right;
   word-break: break-word;
 }
 
-/* GPS coordinates section */
 .track-info__coords {
   margin-top: 14px;
   padding: 10px 12px;
-  background: #f7fafc;
-  border-radius: 10px;
-  border: 1px solid #e8edf4;
+  background: #f7f9fc;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
 }
 
 .track-info__coords-header {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #718096;
+  color: var(--color-text-muted);
   margin-bottom: 8px;
 }
 
@@ -956,29 +991,30 @@
   color: #4a5568;
 }
 
-.track-info__coords-body strong {
-  color: #2d3748;
+.track-info__coords-body strong { color: var(--color-text-secondary); }
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .dash-grid { grid-template-columns: 60% 1fr; }
 }
 
-/* ── Responsive: hide side panel on small screens ── */
+@media (max-width: 900px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-right { display: none; }
+}
+
+@media (max-width: 640px) {
+  .kpi-row { grid-template-columns: 1fr; }
+  .bus-list-card { height: auto; max-height: calc(100vh - 200px); }
+  .bus-info__grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 768px) {
-  .track-info-panel {
-    display: none;
-  }
-
-  .track-header {
-    padding-right: 56px;
-    flex-wrap: wrap;
-  }
-
-  .track-header__title h2 {
-    font-size: 13px;
-  }
-
+  .track-info-panel { display: none; }
+  .track-header { padding-right: 56px; flex-wrap: wrap; }
+  .track-header__title h2 { font-size: 13px; }
 }
 
 @media (max-width: 480px) {
-  .track-overlay {
-    padding: 12px;
-  }
+  .track-overlay { padding: 12px; }
 }
