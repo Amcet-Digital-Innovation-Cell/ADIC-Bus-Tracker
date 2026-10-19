@@ -56,6 +56,6 @@ jobs:
         with:
           message: |
             ### 🔍 Qlty Code Quality Results
-```
+            ```
             ${{ steps.prep.outputs.result }}
-```
+            ```
