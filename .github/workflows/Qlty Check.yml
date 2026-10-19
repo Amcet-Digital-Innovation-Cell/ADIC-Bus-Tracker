@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: qlty-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -30,5 +31,31 @@ jobs:
           echo "$HOME/.qlty/bin" >> "$GITHUB_PATH"
 
       - name: Run Qlty checks
+        id: qlty
         shell: bash
-        run: qlty check
+        run: |
+          qlty check 2>&1 | tee qlty-output.txt
+          QLTY_EXIT=${PIPESTATUS[0]}
+          echo "exit_code=$QLTY_EXIT" >> "$GITHUB_OUTPUT"
+          exit $QLTY_EXIT
+
+      - name: Prepare PR comment content
+        if: always() && github.event_name == 'pull_request'
+        id: prep
+        shell: bash
+        run: |
+          {
+            echo 'result<<EOF'
+            cat qlty-output.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post results as PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ### 🔍 Qlty Code Quality Results
+```
+            ${{ steps.prep.outputs.result }}
+```
