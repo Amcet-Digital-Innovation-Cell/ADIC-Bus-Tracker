@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bustransit-g4ks.onrender.com';
-
-const getToken = () => sessionStorage.getItem('authToken');
+import { Plus, Edit2, Trash2, X, Search, ChevronDown, Route as RouteIcon, MapPin } from 'lucide-react';
+import apiClient from '../lib/apiClient';
 
 const mapFromDb = (row) => ({
   id: row.id,
@@ -19,22 +16,16 @@ const mapFromDb = (row) => ({
   longitude: row.longitude,
   stops: Array.isArray(row.stops)
     ? row.stops.map((s, idx) => ({
-        id: s.id || idx,
-        stop_name: (s.stop_name || s || '').toUpperCase(),
-        stop_order: s.stop_order || idx + 1,
+        id: s.id || idx + 1,
+        stop_name: (typeof s === 'string' ? s : (s.stop_name || s.name || '')).toUpperCase(),
+        stop_order: s.stop_order !== undefined ? Number(s.stop_order) : idx + 1,
       }))
-    : (Array.isArray(row.bus_stops)
-        ? row.bus_stops.map((s, idx) => ({
-            id: s.id || idx,
-            stop_name: (s.stop_name || s || '').toUpperCase(),
-            stop_order: s.stop_order || idx + 1,
-          }))
-        : []),
+    : [],
 });
 
 /* ── Status badge component ── */
 function StatusBadge({ status }) {
-  const isActive   = status === 'Active' || status === 'active';
+  const isActive = status === 'Active' || status === 'active';
   const isInactive = status === 'Inactive' || status === 'inactive';
   const cls = isActive
     ? 'status-badge status-badge--active'
@@ -46,216 +37,164 @@ function StatusBadge({ status }) {
 
 const BusesPage = ({ buses, setBuses }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBus, setEditingBus]   = useState(null);
-  const [searchTerm, setSearchTerm]   = useState('');
+  const [editingBus, setEditingBus] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [busToDelete, setBusToDelete] = useState(null);
-  const [saving, setSaving]           = useState(false);
-  const [deleting, setDeleting]       = useState(false);
-  const [apiError, setApiError]       = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [apiError, setApiError] = useState('');
   const cancelDeleteRef = useRef(null);
 
-  const emptyForm = { route_id: '', route: '', busNo: '', busId: '', driver: '', contact: '', license: '', stops: [] };
+  const emptyForm = {
+    route_id: '',
+    route: '',
+    busNo: '',
+    busId: '',
+    driver: '',
+    contact: '',
+    license: '',
+  };
   const [formData, setFormData] = useState(emptyForm);
 
-  const [routesList, setRoutesList]     = useState([]);
+  const [routesList, setRoutesList] = useState([]);
   const [routesLoading, setRoutesLoading] = useState(false);
-  const [routesError, setRoutesError]   = useState('');
+  const [routesError, setRoutesError] = useState('');
 
-  // ── Load routes ──────────────────────────────────────────────────────────
+  // ── Load available routes from bus_routes ──────────────────────────────────
   useEffect(() => {
+    let isMounted = true;
     const fetchRoutes = async () => {
       setRoutesLoading(true);
       setRoutesError('');
       try {
-        const res = await fetch(`${API_BASE}/api/routes`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        if (!res.ok) throw new Error(`Failed to load routes (${res.status})`);
-        const json = await res.json();
+        const json = await apiClient.get('/api/routes');
+        if (!isMounted) return;
         const data = json.data || json;
         setRoutesList(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error('fetchRoutes:', err.message);
-        setRoutesError(err.message || 'Failed to load routes');
+        console.error('fetchRoutes error:', err.message);
+        if (isMounted) {
+          setRoutesError(err.message || 'Failed to load routes');
+        }
       } finally {
-        setRoutesLoading(false);
+        if (isMounted) setRoutesLoading(false);
       }
     };
     fetchRoutes();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // ── Load buses ──────────────────────────────────────────────────────────
+  // ── Load buses from backend ───────────────────────────────────────────────
   useEffect(() => {
+    let isMounted = true;
     const fetchBuses = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/buses`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        if (!res.ok) throw new Error(`Failed to load buses (${res.status})`);
-        const json = await res.json();
+        const json = await apiClient.get('/api/buses');
+        if (!isMounted) return;
         const data = json.data || json;
         setBuses(Array.isArray(data) ? data.map(mapFromDb) : []);
       } catch (err) {
-        console.error('fetchBuses:', err.message);
+        console.error('fetchBuses error:', err.message);
       }
     };
     fetchBuses();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [setBuses]);
 
-  const filteredBuses = buses.filter(bus =>
-    (bus.busNo   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.route   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (bus.driver  || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredBuses = buses.filter(
+    (bus) =>
+      (bus.busNo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (bus.busId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (bus.route || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (bus.driver || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ── Stop Management Handlers ──────────────────────────────────────────────
-  const handleAddStop = () => {
-    setFormData((prev) => ({
-      ...prev,
-      stops: [
-        ...prev.stops,
-        { stop_name: '', stop_order: prev.stops.length + 1 },
-      ],
-    }));
-  };
+  // Selected route object from routesList for preview in modal
+  const selectedRouteObj = routesList.find(
+    (r) => String(r.id) === String(formData.route_id)
+  );
 
-  const handleRemoveStop = (indexToRemove) => {
-    setFormData((prev) => {
-      const updated = prev.stops.filter((_, idx) => idx !== indexToRemove);
-      const reordered = updated.map((s, idx) => ({
-        ...s,
-        stop_order: idx + 1,
-      }));
-      return { ...prev, stops: reordered };
-    });
-  };
-
-  const handleUpdateStopName = (index, value) => {
-    setFormData((prev) => {
-      const updated = [...prev.stops];
-      updated[index] = {
-        ...updated[index],
-        stop_name: value.toUpperCase(),
-      };
-      return { ...prev, stops: updated };
-    });
-  };
-
-  const handleMoveStop = (index, direction) => {
-    setFormData((prev) => {
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= prev.stops.length) return prev;
-
-      const updated = [...prev.stops];
-      const temp = updated[index];
-      updated[index] = updated[targetIndex];
-      updated[targetIndex] = temp;
-
-      const reordered = updated.map((s, idx) => ({
-        ...s,
-        stop_order: idx + 1,
-      }));
-      return { ...prev, stops: reordered };
-    });
-  };
-
-  // ── Create / Update ──────────────────────────────────────────────────────
-  const handleSave = async () => {
+  // ── Save Bus (Create / Update) ─────────────────────────────────────────────
+  const handleSave = async (e) => {
+    if (e) e.preventDefault();
     setApiError('');
+
     if (!formData.route_id) {
-      setApiError('Route selection is required');
+      setApiError('Please select a route for this bus');
       return;
     }
+
+    const cleanBusNo = (formData.busNo || '').replace(/\s+/g, '').toUpperCase();
+    if (!cleanBusNo) {
+      setApiError('Bus registration number (Bus No) is required');
+      return;
+    }
+
+    const cleanBusId = (formData.busId || '').trim().toUpperCase();
+    if (!cleanBusId) {
+      setApiError('Bus ID is required');
+      return;
+    }
+
     setSaving(true);
     try {
-      const stopsPayload = (formData.stops || [])
-        .map((s, idx) => ({
-          stop_name: (s.stop_name || '').trim().toUpperCase(),
-          stop_order: idx + 1,
-        }))
-        .filter(s => s.stop_name.length > 0);
-
       if (editingBus) {
-        // Step 1: Update bus metadata (exclude stops — handled separately)
         const metaPayload = {
-          busNo:    (formData.busNo || '').replace(/\s+/g, '').toUpperCase(),
-          driver:   (formData.driver || '').trim().toUpperCase(),
-          contact:  (formData.contact || '').trim().toUpperCase(),
-          route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
-          license:  (formData.license || '').trim().toUpperCase(),
+          busId: cleanBusId,
+          busNo: cleanBusNo,
+          driver: (formData.driver || '').trim().toUpperCase(),
+          contact: (formData.contact || '').trim().toUpperCase(),
+          route_id: parseInt(formData.route_id, 10),
+          license: (formData.license || '').trim().toUpperCase(),
         };
 
-        const res = await fetch(`${API_BASE}/api/buses/${editingBus.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-          body: JSON.stringify(metaPayload),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || json.message || 'Update failed');
-
-        // Step 2: Update stops via dedicated endpoint
-        const stopsRes = await fetch(`${API_BASE}/api/buses/${editingBus.id}/stops`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-          body: JSON.stringify({ stops: stopsPayload }),
-        });
-        const stopsJson = await stopsRes.json();
-        if (!stopsRes.ok) throw new Error(stopsJson.error || stopsJson.message || 'Failed to save stops');
-
-        // Merge the updated bus data with the fresh stops
-        const updatedStops = stopsJson.data || [];
-        const updated = mapFromDb({ ...json.data, stops: updatedStops });
-        setBuses(buses.map(b => b.id === editingBus.id ? updated : b));
+        const json = await apiClient.put(`/api/buses/${editingBus.id}`, metaPayload);
+        const updated = mapFromDb(json.data || json);
+        setBuses((prev) =>
+          prev.map((b) => (b.id === editingBus.id ? updated : b))
+        );
       } else {
-        // Create new bus — send everything including stops in one request
         const createPayload = {
-          busNo:    (formData.busNo || '').replace(/\s+/g, '').toUpperCase(),
-          busId:    (formData.busId || '').trim().toUpperCase(),
-          driver:   (formData.driver || '').trim().toUpperCase(),
-          contact:  (formData.contact || '').trim().toUpperCase(),
-          route_id: formData.route_id ? parseInt(formData.route_id, 10) : null,
-          license:  (formData.license || '').trim().toUpperCase(),
-          stops:    stopsPayload,
+          busId: (formData.busId || '').trim().toUpperCase(),
+          busNo: cleanBusNo,
+          driver: (formData.driver || '').trim().toUpperCase(),
+          contact: (formData.contact || '').trim().toUpperCase(),
+          route_id: parseInt(formData.route_id, 10),
+          license: (formData.license || '').trim().toUpperCase(),
         };
 
-        const res = await fetch(`${API_BASE}/api/buses`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-          body: JSON.stringify(createPayload),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || json.message || 'Create failed');
-        const created = mapFromDb(json.data);
-        setBuses(prev => [...prev, created]);
+        const json = await apiClient.post('/api/buses', createPayload);
+        const created = mapFromDb(json.data || json);
+        setBuses((prev) => [...prev, created]);
       }
 
       setIsModalOpen(false);
       setEditingBus(null);
       setFormData(emptyForm);
     } catch (err) {
+      console.error('handleSave error:', err.message);
       setApiError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Delete ───────────────────────────────────────────────────────────────
+  // ── Delete Bus ─────────────────────────────────────────────────────────────
   const confirmDelete = (bus) => setBusToDelete(bus);
 
   const handleDeleteConfirm = async () => {
+    if (!busToDelete) return;
     setDeleting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/buses/${busToDelete.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || json.message || 'Delete failed');
-      }
-      setBuses(buses.filter(b => b.id !== busToDelete.id));
+      await apiClient.delete(`/api/buses/${busToDelete.id}`);
+      setBuses((prev) => prev.filter((b) => b.id !== busToDelete.id));
       setBusToDelete(null);
     } catch (err) {
+      console.error('handleDelete error:', err.message);
       alert(`Delete failed: ${err.message}`);
     } finally {
       setDeleting(false);
@@ -266,63 +205,54 @@ const BusesPage = ({ buses, setBuses }) => {
 
   useEffect(() => {
     if (!busToDelete) return;
-    const handler = (e) => { if (e.key === 'Escape') handleDeleteCancel(); };
+    const handler = (e) => {
+      if (e.key === 'Escape') handleDeleteCancel();
+    };
     document.addEventListener('keydown', handler);
     cancelDeleteRef.current?.focus();
     return () => document.removeEventListener('keydown', handler);
   }, [busToDelete]);
 
-  const openAddModal   = () => { setFormData(emptyForm); setEditingBus(null); setApiError(''); setIsModalOpen(true); };
-  const openEditModal  = async (bus) => {
-    setEditingBus(bus);
-    let initialStops = Array.isArray(bus.stops) ? bus.stops : [];
-    if (initialStops.length === 0) {
-      try {
-        const res = await fetch(`${API_BASE}/api/buses/${bus.id}/stops`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const fetchedStops = json.data || json;
-          if (Array.isArray(fetchedStops)) {
-            initialStops = fetchedStops;
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load bus stops:', err);
-      }
-    }
+  // ── Modal Open / Close Handlers ────────────────────────────────────────────
+  const openAddModal = () => {
+    setFormData(emptyForm);
+    setEditingBus(null);
+    setApiError('');
+    setIsModalOpen(true);
+  };
 
+  const openEditModal = (bus) => {
+    setEditingBus(bus);
     setFormData({
-      route_id: bus.route_id || '',
+      route_id: bus.route_id ? String(bus.route_id) : '',
       route: (bus.route || '').toUpperCase(),
       busNo: (bus.busNo || '').replace(/\s+/g, '').toUpperCase(),
       busId: (bus.busId || '').toUpperCase(),
       driver: (bus.driver || '').toUpperCase(),
       contact: (bus.contact || '').toUpperCase(),
       license: (bus.license || '').toUpperCase(),
-      stops: initialStops.map((s, idx) => ({
-        id: s.id || idx,
-        stop_name: (s.stop_name || s || '').toUpperCase(),
-        stop_order: s.stop_order || idx + 1,
-      })),
     });
     setApiError('');
     setIsModalOpen(true);
   };
-  const closeModal     = () => { setIsModalOpen(false); setEditingBus(null); setFormData(emptyForm); setApiError(''); };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingBus(null);
+    setFormData(emptyForm);
+    setApiError('');
+  };
 
   const updateField = (field, value) => {
     let val = value;
     if (typeof val === 'string' && field !== 'route_id') {
       val = field === 'busNo' ? val.replace(/\s+/g, '').toUpperCase() : val.toUpperCase();
     }
-    setFormData(prev => ({ ...prev, [field]: val }));
+    setFormData((prev) => ({ ...prev, [field]: val }));
   };
 
   return (
     <div className="buses-page">
-
       {/* ── Toolbar ───────────────────────────────── */}
       <div className="buses-toolbar">
         {/* Search bar */}
@@ -331,7 +261,7 @@ const BusesPage = ({ buses, setBuses }) => {
           <input
             type="text"
             className="buses-search__input"
-            placeholder="Search by bus no, route, or driver..."
+            placeholder="Search by bus no, ID, route, or driver..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -354,56 +284,99 @@ const BusesPage = ({ buses, setBuses }) => {
           <table className="buses-table">
             <thead>
               <tr>
-                {['Bus ID', 'Route', 'Bus No', 'Driver', 'Contact', 'License', 'Status', 'Action'].map(col => (
-                  <th key={col} className="buses-table__th">{col}</th>
-                ))}
+                <th className="buses-table__th" style={{ width: '8%' }}>Bus ID</th>
+                <th className="buses-table__th" style={{ width: '28%' }}>Assigned Route & Stops</th>
+                <th className="buses-table__th" style={{ width: '13%' }}>Bus No</th>
+                <th className="buses-table__th" style={{ width: '13%' }}>Driver</th>
+                <th className="buses-table__th" style={{ width: '13%' }}>Contact</th>
+                <th className="buses-table__th" style={{ width: '11%' }}>License</th>
+                <th className="buses-table__th" style={{ width: '8%' }}>Status</th>
+                <th className="buses-table__th" style={{ width: '6%' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredBuses.length > 0 ? (
-                filteredBuses.map((bus) => (
-                  <tr key={bus.id} className="buses-table__row">
-                    <td className="buses-table__td buses-table__td--id">{bus.busId || '—'}</td>
-                    <td className="buses-table__td" title={bus.stops && bus.stops.length > 0 ? `Stops: ${bus.stops.map(s => s.stop_name).join(' → ')}` : bus.route}>
-                      <div style={{ fontWeight: 600 }}>{bus.route || '—'}</div>
-                      {bus.stops && bus.stops.length > 0 && (
-                        <div style={{ fontSize: '10px', color: 'var(--color-blue)', fontWeight: 700, marginTop: '2px' }}>
-                          {bus.stops.length} STOPS
+                filteredBuses.map((bus) => {
+                  const stopNames = (bus.stops || [])
+                    .map((s) => (typeof s === 'string' ? s : s.stop_name || ''))
+                    .filter(Boolean);
+
+                  return (
+                    <tr key={bus.id} className="buses-table__row">
+                      {/* Bus ID */}
+                      <td className="buses-table__td buses-table__td--id">
+                        {bus.busId ? `Bus ${bus.busId}` : '—'}
+                      </td>
+
+                      {/* Route & Stops Sequence */}
+                      <td className="buses-table__td" title={stopNames.length > 0 ? `Stops: ${stopNames.join(' → ')}` : (bus.route || 'No route')}>
+                        <div className="bus-route-cell">
+                          <div className="bus-route-name">
+                            <RouteIcon size={13} className="bus-route-icon" />
+                            <span>{bus.route || '—'}</span>
+                          </div>
+                          {stopNames.length > 0 ? (
+                            <div className="bus-stops-preview">
+                              <span className="bus-stops-badge">
+                                {stopNames.length} {stopNames.length === 1 ? 'STOP' : 'STOPS'}
+                              </span>
+                              <span className="bus-stops-chain">
+                                {stopNames.slice(0, 3).join(' → ')}
+                                {stopNames.length > 3 ? ` + ${stopNames.length - 3} more` : ''}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="bus-stops-none">No stops assigned</div>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="buses-table__td">{bus.busNo || '—'}</td>
-                    <td className="buses-table__td">{bus.driver || '—'}</td>
-                    <td className="buses-table__td">{bus.contact || '—'}</td>
-                    <td className="buses-table__td">{bus.license || '—'}</td>
-                    <td className="buses-table__td">
-                      <StatusBadge status={bus.status} />
-                    </td>
-                    <td className="buses-table__td buses-table__td--actions">
-                      <div className="buses-actions">
-                        <button
-                          className="icon-btn"
-                          title="Edit bus"
-                          onClick={() => openEditModal(bus)}
-                        >
-                          <Edit2 size={15} strokeWidth={2} />
-                        </button>
-                        <button
-                          className="icon-btn icon-btn--danger"
-                          title="Delete bus"
-                          onClick={() => confirmDelete(bus)}
-                        >
-                          <Trash2 size={15} strokeWidth={2} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      {/* Bus Registration No */}
+                      <td className="buses-table__td font-medium">
+                        {bus.busNo || '—'}
+                      </td>
+
+                      {/* Driver */}
+                      <td className="buses-table__td">{bus.driver || '—'}</td>
+
+                      {/* Contact */}
+                      <td className="buses-table__td">{bus.contact || '—'}</td>
+
+                      {/* License */}
+                      <td className="buses-table__td">{bus.license || '—'}</td>
+
+                      {/* Status */}
+                      <td className="buses-table__td">
+                        <StatusBadge status={bus.status} />
+                      </td>
+
+                      {/* Actions */}
+                      <td className="buses-table__td buses-table__td--actions">
+                        <div className="buses-actions">
+                          <button
+                            className="icon-btn"
+                            title="Edit bus"
+                            onClick={() => openEditModal(bus)}
+                          >
+                            <Edit2 size={15} strokeWidth={2} />
+                          </button>
+                          <button
+                            className="icon-btn icon-btn--danger"
+                            title="Delete bus"
+                            onClick={() => confirmDelete(bus)}
+                          >
+                            <Trash2 size={15} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan="8" className="buses-table__empty">
                     {buses.length === 0
-                      ? 'No buses have been added yet. Click "Add Bus" to get started.'
+                      ? 'No buses have been added yet. Click "+ Add Bus" to get started.'
                       : 'No buses match your search. Try a different keyword.'}
                   </td>
                 </tr>
@@ -417,7 +390,6 @@ const BusesPage = ({ buses, setBuses }) => {
       {isModalOpen && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal-panel buses-modal" onClick={(e) => e.stopPropagation()}>
-
             {/* Close button */}
             <button className="modal-close-btn" onClick={closeModal} title="Close">
               <X size={14} strokeWidth={2.5} />
@@ -425,246 +397,165 @@ const BusesPage = ({ buses, setBuses }) => {
 
             {/* Title */}
             <div className="buses-modal__header">
-              <h2 className="buses-modal__title">{editingBus ? 'Edit Bus' : 'Add Bus'}</h2>
+              <h2 className="buses-modal__title">
+                {editingBus ? 'Edit Bus' : 'Add New Bus'}
+              </h2>
             </div>
 
             {/* Form */}
-            <div className="buses-modal__body">
-              <div className="buses-modal__grid">
-
-                {/* Bus Id */}
-                <div className="buses-modal__field">
-                  <label className="form-label">Bus Id</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. 01"
-                    value={formData.busId}
-                    onChange={e => !editingBus && updateField('busId', e.target.value)}
-                    readOnly={!!editingBus}
-                    style={editingBus ? { opacity: 0.6, cursor: 'not-allowed', background: 'var(--color-bg-subtle, #f5f5f5)' } : {}}
-                    title={editingBus ? 'Bus ID cannot be changed while editing' : ''}
-                  />
-                </div>
-
-                {/* Route */}
-                <div className="buses-modal__field">
-                  <label className="form-label">Route</label>
-                  {routesLoading ? (
-                    <div className="buses-modal__loading">Loading routes…</div>
-                  ) : routesError ? (
-                    <div className="buses-modal__routes-error">{routesError}</div>
-                  ) : (
-                    <div className="buses-modal__select-wrap">
-                      <select
-                        className="form-select"
-                        value={formData.route_id || ''}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const matched = routesList.find(r => String(r.id) === String(selectedId));
-                          updateField('route_id', selectedId);
-                          updateField('route', matched ? matched.routeName : '');
-                        }}
-                      >
-                        <option value="">— Select Route —</option>
-                        {routesList.map(r => (
-                          <option key={r.id} value={r.id}>{r.routeName}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} className="buses-modal__select-icon" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Bus No */}
-                <div className="buses-modal__field">
-                  <label className="form-label">Bus No</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. TN33BA1234"
-                    value={formData.busNo}
-                    onChange={e => updateField('busNo', e.target.value)}
-                  />
-                </div>
-
-                {/* Driver */}
-                <div className="buses-modal__field">
-                  <label className="form-label">Driver</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. Rajesh"
-                    value={formData.driver}
-                    onChange={e => updateField('driver', e.target.value)}
-                  />
-                </div>
-
-                {/* Contact */}
-                <div className="buses-modal__field">
-                  <label className="form-label">Contact</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. +91 9876543210"
-                    value={formData.contact}
-                    onChange={e => updateField('contact', e.target.value)}
-                  />
-                </div>
-
-                {/* License */}
-                <div className="buses-modal__field">
-                  <label className="form-label">License</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. AD 32545"
-                    value={formData.license}
-                    onChange={e => updateField('license', e.target.value)}
-                  />
-                </div>
-
-              </div>
-
-              {/* ── Bus-Specific Stops Section ── */}
-              <div className="buses-modal__stops-header" style={{
-                marginTop: '16px',
-                marginBottom: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                borderTop: '1px solid var(--color-border-soft)',
-                paddingTop: '14px',
-              }}>
-                <label className="form-label" style={{ margin: 0 }}>
-                  BUS STOPS (STOPPING PATTERN)
-                </label>
-                <span style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                  background: 'var(--color-blue-light)',
-                  color: 'var(--color-blue-dark)',
-                }}>
-                  {formData.stops.length} STOPS
-                </span>
-              </div>
-
-              <div className="buses-modal__stops-list" style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                maxHeight: '180px',
-                overflowY: 'auto',
-                paddingRight: '4px',
-                marginBottom: '12px',
-              }}>
-                {formData.stops.map((stop, idx) => (
-                  <div key={idx} className="buses-modal__stop-row" style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: '#f7f9fc',
-                    padding: '6px 10px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border-soft)',
-                    boxShadow: 'var(--shadow-inset)',
-                  }}>
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: 'var(--color-text-muted)',
-                      minWidth: '22px',
-                    }}>
-                      {idx + 1}.
-                    </span>
+            <form onSubmit={handleSave}>
+              <div className="buses-modal__body">
+                <div className="buses-modal__grid">
+                  {/* Bus ID */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">Bus ID *</label>
                     <input
                       className="form-input"
-                      style={{
-                        height: '34px',
-                        fontSize: '12.5px',
-                        padding: '0 10px',
-                        flex: 1,
-                      }}
-                      placeholder={`e.g. STOP ${idx + 1}`}
-                      value={stop.stop_name}
-                      onChange={(e) => handleUpdateStopName(idx, e.target.value)}
+                      placeholder="e.g. 01 or 542"
+                      value={formData.busId}
+                      onChange={(e) => updateField('busId', e.target.value)}
+                      required
                     />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        style={{ width: '28px', height: '28px', opacity: idx === 0 ? 0.4 : 1 }}
-                        onClick={() => handleMoveStop(idx, 'up')}
-                        disabled={idx === 0}
-                        title="Move Up"
-                      >
-                        <ChevronUp size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        style={{ width: '28px', height: '28px', opacity: idx === formData.stops.length - 1 ? 0.4 : 1 }}
-                        onClick={() => handleMoveStop(idx, 'down')}
-                        disabled={idx === formData.stops.length - 1}
-                        title="Move Down"
-                      >
-                        <ChevronDown size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-btn icon-btn--danger"
-                        style={{ width: '28px', height: '28px' }}
-                        onClick={() => handleRemoveStop(idx)}
-                        title="Remove Stop"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
                   </div>
-                ))}
 
-                {formData.stops.length === 0 && (
-                  <div style={{
-                    textAlign: 'center',
-                    fontSize: '12px',
-                    color: 'var(--color-text-faint)',
-                    padding: '12px 0',
-                    background: '#f7fafc',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px dashed var(--color-border)',
-                  }}>
-                    No bus-specific stops added yet. Click "+ Add Stop" below.
+                  {/* Route Selection Dropdown */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">Assigned Route *</label>
+                    {routesLoading ? (
+                      <div className="buses-modal__loading">Loading routes…</div>
+                    ) : routesError ? (
+                      <div className="buses-modal__routes-error">{routesError}</div>
+                    ) : (
+                      <div className="buses-modal__select-wrap">
+                        <select
+                          className="form-select"
+                          value={formData.route_id || ''}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const matched = routesList.find(
+                              (r) => String(r.id) === String(selectedId)
+                            );
+                            updateField('route_id', selectedId);
+                            updateField(
+                              'route',
+                              matched ? matched.route_name || matched.routeName || '' : ''
+                            );
+                          }}
+                          required
+                        >
+                          <option value="">— Select Route —</option>
+                          {routesList.map((r) => {
+                            const stopCount = Array.isArray(r.stops) ? r.stops.length : 0;
+                            return (
+                              <option key={r.id} value={r.id}>
+                                {r.route_name || r.routeName} {r.route_code ? `(${r.route_code})` : ''} — {stopCount} {stopCount === 1 ? 'stop' : 'stops'}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <ChevronDown size={14} className="buses-modal__select-icon" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bus No (Registration Number) */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">Bus No (Reg. No) *</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. TN20CH9640"
+                      value={formData.busNo}
+                      onChange={(e) => updateField('busNo', e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {/* Driver */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">Driver Name</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Rajesh Kumar"
+                      value={formData.driver}
+                      onChange={(e) => updateField('driver', e.target.value)}
+                    />
+                  </div>
+
+                  {/* Contact */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">Driver Contact</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. +91 9876543210"
+                      value={formData.contact}
+                      onChange={(e) => updateField('contact', e.target.value)}
+                    />
+                  </div>
+
+                  {/* License */}
+                  <div className="buses-modal__field">
+                    <label className="form-label">License Number</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. TN20 201800045"
+                      value={formData.license}
+                      onChange={(e) => updateField('license', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* ── Route Stops Info Card (Inherited from selected route) ── */}
+                {selectedRouteObj && (
+                  <div className="bus-route-info-card">
+                    <div className="bus-route-info-card__header">
+                      <div className="bus-route-info-card__title">
+                        <MapPin size={14} className="text-blue-500" />
+                        <span>Stops for &ldquo;{selectedRouteObj.route_name || selectedRouteObj.routeName}&rdquo;</span>
+                      </div>
+                      <span className="bus-stops-badge">
+                        {(selectedRouteObj.stops || []).length} STOPS
+                      </span>
+                    </div>
+
+                    {selectedRouteObj.stops && selectedRouteObj.stops.length > 0 ? (
+                      <div className="bus-route-info-card__stops">
+                        {selectedRouteObj.stops.map((s, idx) => {
+                          const sName = typeof s === 'string' ? s : s.stop_name || '';
+                          return (
+                            <span key={idx} className="bus-route-stop-pill">
+                              <span className="bus-route-stop-num">{idx + 1}</span>
+                              {sName}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="bus-route-info-card__empty">
+                        No stops configured for this route. Add stops on the Routes page.
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* API error */}
+                {apiError && <div className="buses-modal__error">{apiError}</div>}
+
+                {/* Modal Actions */}
+                <div className="buses-modal__footer">
+                  <button type="button" className="btn-ghost" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    id="save-bus-btn"
+                    className="btn-orange buses-modal__save-btn"
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving…' : editingBus ? 'Update Bus' : 'Add Bus'}
+                  </button>
+                </div>
               </div>
-
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{
-                  height: '36px',
-                  fontSize: '12.5px',
-                  width: '100%',
-                  marginBottom: '16px',
-                  justifyContent: 'center',
-                }}
-                onClick={handleAddStop}
-              >
-                <Plus size={15} /> Add Stop
-              </button>
-
-              {/* API error */}
-              {apiError && (
-                <div className="buses-modal__error">{apiError}</div>
-              )}
-
-              {/* Save button */}
-              <button
-                id="save-bus-btn"
-                className="btn-primary buses-modal__save-btn"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -692,9 +583,11 @@ const BusesPage = ({ buses, setBuses }) => {
               <Trash2 size={28} color="#ef4444" strokeWidth={2} />
             </div>
 
-            <h2 id="delete-bus-title" className="buses-delete-modal__title">Delete Bus</h2>
+            <h2 id="delete-bus-title" className="buses-delete-modal__title">
+              Delete Bus
+            </h2>
             <p className="buses-delete-modal__msg">
-              Are you sure you want to delete <strong>Bus {busToDelete.busNo}</strong> ({busToDelete.route})?
+              Are you sure you want to delete <strong>Bus {busToDelete.busId || busToDelete.busNo}</strong> ({busToDelete.route || 'No Route'})?
               This action cannot be undone.
             </p>
 
@@ -769,11 +662,7 @@ const BusesPage = ({ buses, setBuses }) => {
         }
 
         .buses-search__input::placeholder { color: var(--color-text-faint); }
-
-        .buses-search__input:hover {
-          border-color: #c8d5e0;
-        }
-
+        .buses-search__input:hover { border-color: #c8d5e0; }
         .buses-search__input:focus {
           border-color: var(--color-blue);
           box-shadow: 0 0 0 3px rgba(52,152,219,0.12), var(--shadow-card);
@@ -821,9 +710,7 @@ const BusesPage = ({ buses, setBuses }) => {
         .buses-table__row {
           transition: background var(--transition-fast);
         }
-
         .buses-table__row:hover { background: #f7fafc; }
-
         .buses-table__row:not(:last-child) td {
           border-bottom: 1px solid var(--color-border-soft);
         }
@@ -845,8 +732,62 @@ const BusesPage = ({ buses, setBuses }) => {
           color: var(--color-blue);
         }
 
-        .buses-table__td--actions { overflow: visible; }
+        .bus-route-cell {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 3px;
+          max-width: 100%;
+        }
 
+        .bus-route-name {
+          font-weight: 600;
+          color: var(--color-text-primary);
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+
+        .bus-route-icon {
+          color: var(--color-blue);
+          flex-shrink: 0;
+        }
+
+        .bus-stops-preview {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          max-width: 100%;
+        }
+
+        .bus-stops-badge {
+          display: inline-block;
+          font-size: 10px;
+          font-weight: 700;
+          padding: 2px 6px;
+          border-radius: var(--radius-full);
+          background: #e0f2fe;
+          color: #0369a1;
+          letter-spacing: 0.02em;
+          flex-shrink: 0;
+        }
+
+        .bus-stops-chain {
+          font-size: 11px;
+          color: var(--color-text-muted);
+          max-width: 160px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .bus-stops-none {
+          font-size: 11px;
+          color: var(--color-text-faint);
+          font-style: italic;
+        }
+
+        .buses-table__td--actions { overflow: visible; }
         .buses-actions {
           display: flex;
           align-items: center;
@@ -870,7 +811,7 @@ const BusesPage = ({ buses, setBuses }) => {
 
         /* Modal */
         .buses-modal {
-          max-width: 500px;
+          max-width: 520px;
           padding: 0;
           overflow: hidden;
         }
@@ -892,7 +833,9 @@ const BusesPage = ({ buses, setBuses }) => {
           padding: 20px 24px 24px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 16px;
+          max-height: 80vh;
+          overflow-y: auto;
         }
 
         .buses-modal__grid {
@@ -944,8 +887,74 @@ const BusesPage = ({ buses, setBuses }) => {
           pointer-events: none;
         }
 
+        /* Route Info Card inside Bus Modal */
+        .bus-route-info-card {
+          background: #f8fafc;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .bus-route-info-card__header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .bus-route-info-card__title {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--color-text-primary);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .bus-route-info-card__stops {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          max-height: 90px;
+          overflow-y: auto;
+          padding-top: 2px;
+        }
+
+        .bus-route-stop-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          padding: 2px 8px;
+          border-radius: var(--radius-sm);
+          font-size: 11px;
+          font-weight: 600;
+          color: #334155;
+        }
+
+        .bus-route-stop-num {
+          font-size: 9.5px;
+          font-weight: 700;
+          color: var(--color-blue);
+          background: #eff6ff;
+          width: 15px;
+          height: 15px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-full);
+        }
+
+        .bus-route-info-card__empty {
+          font-size: 11.5px;
+          color: var(--color-text-faint);
+          font-style: italic;
+        }
+
         .buses-modal__error {
-          margin-top: 4px;
           padding: 10px 14px;
           background: rgba(239,68,68,0.08);
           border: 1px solid rgba(239,68,68,0.3);
@@ -955,9 +964,15 @@ const BusesPage = ({ buses, setBuses }) => {
           text-align: center;
         }
 
-        .buses-modal__save-btn {
-          width: 100%;
+        .buses-modal__footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
           margin-top: 4px;
+        }
+
+        .buses-modal__save-btn {
+          min-width: 120px;
         }
 
         /* Delete modal */

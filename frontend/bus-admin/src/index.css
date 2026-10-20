@@ -279,6 +279,12 @@ input, button, select, textarea {
   animation: overlay-fade-in var(--transition-normal);
 }
 
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 12px;
+  }
+}
+
 .modal-panel {
   position: relative;
   background: var(--color-card-bg);
