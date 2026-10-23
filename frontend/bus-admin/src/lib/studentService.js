@@ -100,6 +100,12 @@ export const normalizeStudent = (raw) => {
     email: raw.email || '',
     student_mobile: studentMobile,
     department: raw.department || '',
+    parent_name: raw.parent_name || '',
+    parent_phone: raw.parent_phone || '',
+    route_id: raw.route_id || null,
+    route_name: raw.route_name || '',
+    bus_number: raw.bus_number || '',
+    boarding_stop: raw.boarding_stop || raw.stop_name || '',
     created_at: raw.created_at || raw.createdAt || null,
   };
 
@@ -176,7 +182,7 @@ export const studentService = {
    * Attempts POST /api/students/bulk or sequential POST /api/students
    * @param {Array<{ student_id, name, year }>} students
    */
-  addStudentsBulk: async (students) => {
+  addStudentsBulk: async (students, options = {}) => {
     if (!Array.isArray(students) || students.length === 0) {
       throw new Error('No students provided for bulk insertion');
     }
@@ -184,34 +190,30 @@ export const studentService = {
     const formattedPayload = students.map((s) => {
       const dbYear = mapYearToDb(s.year || s.academic_year);
       return {
-        student_id: String(s.student_id || '').trim(),
+        student_id: String(s.student_id || '').trim().toUpperCase(),
         student_name: String(s.student_name || s.name || '').trim(),
         year: dbYear,
         academic_year: dbYear,
       };
     });
 
-    // Attempt bulk API endpoint if supported by backend
+    // Attempt bulk API endpoint with deduplication support
     try {
-      const res = await apiClient.post('/api/students/bulk', { students: formattedPayload });
-      return { successCount: students.length, failedCount: 0, res };
-    } catch {
-      // Fallback: batch individual creations concurrently
-      let successCount = 0;
-      let failedCount = 0;
-      const errors = [];
+      const res = await apiClient.post('/api/students/bulk', {
+        students: formattedPayload,
+        skip_duplicates: options.skipDuplicates !== false,
+      });
 
-      for (const std of formattedPayload) {
-        try {
-          await studentService.addStudent(std);
-          successCount++;
-        } catch (err) {
-          failedCount++;
-          errors.push({ student_id: std.student_id, error: err.message });
-        }
-      }
-
-      return { successCount, failedCount, errors };
+      return {
+        successCount: res?.count ?? (Array.isArray(res?.students) ? res.students.length : formattedPayload.length),
+        skippedCount: res?.skippedDuplicatesCount || 0,
+        duplicates: res?.existingDuplicates || [],
+        inBatchDuplicates: res?.inBatchDuplicates || [],
+        res,
+      };
+    } catch (err) {
+      console.error('[studentService] Error adding students in bulk:', err.message);
+      throw err;
     }
   },
 
@@ -220,6 +222,25 @@ export const studentService = {
    * Endpoint: DELETE /api/students/:id
    * @param {string|number} id
    */
+  /**
+   * Update student details
+   * Endpoint: PUT /api/students/:id
+   * @param {string|number} id - Student ID or DB ID
+   * @param {Object} studentData
+   */
+  updateStudent: async (id, studentData) => {
+    if (!id) throw new Error('Student ID is required for update');
+
+    try {
+      const res = await apiClient.put('/api/students/' + encodeURIComponent(id), studentData);
+      const updated = res?.student || (Array.isArray(res?.data) ? res.data[0] : res?.data) || res;
+      return normalizeStudent(updated);
+    } catch (err) {
+      console.error('[studentService] Error updating student:', err.message);
+      throw err;
+    }
+  },
+
   deleteStudent: async (id) => {
     if (!id) throw new Error('Student ID is required for deletion');
 

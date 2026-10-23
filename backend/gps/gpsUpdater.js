@@ -22,11 +22,11 @@
 
 "use strict";
 
-const { adminSupabase, supabase } = require("../config/supabase");
+const { adminSupabase, supabase, db } = require("../config/supabase");
 const gpsLogger = require("./gpsLogger");
 
-/** Use admin client (bypasses RLS) when available */
-const writeClient = () => adminSupabase || supabase;
+/** Use schema-scoped transport client */
+const writeClient = () => db.transport;
 
 /**
  * upsertGpsTelemetry

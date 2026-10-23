@@ -1,6 +1,6 @@
 /**
  * middleware/auth.middleware.js
- * ─────────────────────────────────────────────────────────────
+ * 
  * Supabase JWT validation middleware.
  *
  * The frontend obtains a Supabase access token by calling
@@ -14,13 +14,12 @@
  * attaches the user object to req.user.
  *
  * The backend never generates its own JWTs.
- * ─────────────────────────────────────────────────────────────
  */
 
 const { supabase } = require("../config/supabase");
 
 /**
- * authenticate — Express middleware
+ * authenticate - Express middleware
  *
  * Attaches req.user = { id, email, role } on success.
  * Calls next(error) with status 401 on failure.
@@ -35,14 +34,24 @@ exports.authenticate = async (req, res, next) => {
     return next(error);
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.slice(7).trim();
+
+  // Guard against missing, empty, or string literals of null/undefined
+  if (!token || token === "null" || token === "undefined") {
+    const error = new Error("Authorization token required");
+    error.status = 401;
+    return next(error);
+  }
 
   try {
-    // Validate token against Supabase — verifies signature,
+    // Validate token against Supabase - verifies signature,
     // expiry, and that the user still exists in the project
     const { data, error } = await supabase.auth.getUser(token);
 
     if (error || !data?.user) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[auth.middleware] Token verification failed: ${error?.message || "User not found"}`);
+      }
       const authError = new Error("Invalid or expired token");
       authError.status = 401;
       return next(authError);
@@ -57,6 +66,9 @@ exports.authenticate = async (req, res, next) => {
 
     next();
   } catch (err) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[auth.middleware] Unexpected error: ${err.message}`);
+    }
     err.status = 401;
     err.message = "Token validation failed";
     next(err);

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, Search, MapPin, Navigation, ChevronUp, ChevronDown, ListOrdered } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Search, MapPin, Navigation, ChevronUp, ChevronDown, ListOrdered, Eye } from 'lucide-react';
+import ViewStopsModal from '../components/ViewStopsModal';
 import apiClient from '../lib/apiClient';
 
 const RoutesPage = () => {
   const [routes, setRoutes] = useState([]);
+  const [viewStopsData, setViewStopsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -14,10 +16,9 @@ const RoutesPage = () => {
   const [apiError, setApiError] = useState('');
 
   const emptyForm = {
-    route_code: '',
     route_name: '',
     origin: '',
-    destination: '',
+    destination: 'AMCET',
     stops: [],
   };
 
@@ -45,7 +46,6 @@ const RoutesPage = () => {
 
   // ── Filter Routes ─────────────────────────────────────────────────────────
   const filteredRoutes = routes.filter((r) =>
-    (r.route_code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.route_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.origin || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (r.destination || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -105,7 +105,12 @@ const RoutesPage = () => {
   // ── Modal Handlers ────────────────────────────────────────────────────────
   const openAddModal = () => {
     setEditingRoute(null);
-    setFormData(emptyForm);
+    setFormData({
+      route_name: '',
+      origin: '',
+      destination: 'AMCET',
+      stops: [],
+    });
     setApiError('');
     setIsModalOpen(true);
   };
@@ -114,7 +119,6 @@ const RoutesPage = () => {
     setEditingRoute(route);
     const initialStops = Array.isArray(route.stops) ? route.stops : [];
     setFormData({
-      route_code: route.route_code || '',
       route_name: route.route_name || '',
       origin: route.origin || '',
       destination: route.destination || '',
@@ -131,7 +135,12 @@ const RoutesPage = () => {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingRoute(null);
-    setFormData(emptyForm);
+    setFormData({
+      route_name: '',
+      origin: '',
+      destination: 'AMCET',
+      stops: [],
+    });
     setApiError('');
   };
 
@@ -144,13 +153,8 @@ const RoutesPage = () => {
     e.preventDefault();
     setApiError('');
 
-    const cleanCode = (formData.route_code || '').trim();
     const cleanName = (formData.route_name || '').trim();
 
-    if (!cleanCode) {
-      setApiError('Route Code is required');
-      return;
-    }
     if (!cleanName) {
       setApiError('Route Name is required');
       return;
@@ -166,7 +170,6 @@ const RoutesPage = () => {
       .filter((s) => s.stop_name.length > 0);
 
     const payload = {
-      route_code: cleanCode,
       route_name: cleanName,
       origin: (formData.origin || '').trim() || null,
       destination: (formData.destination || '').trim() || null,
@@ -231,7 +234,7 @@ const RoutesPage = () => {
           <input
             type="text"
             className="routes-search__input"
-            placeholder="Search by route code, name, origin, destination..."
+            placeholder="Search by route name, origin, destination..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -254,29 +257,22 @@ const RoutesPage = () => {
           <table className="routes-table">
             <thead>
               <tr>
-                <th className="routes-table__th" style={{ width: '6%' }}>ID</th>
-                <th className="routes-table__th" style={{ width: '13%' }}>Route Code</th>
-                <th className="routes-table__th" style={{ width: '20%' }}>Route Name</th>
-                <th className="routes-table__th" style={{ width: '25%' }}>Stops Sequence</th>
-                <th className="routes-table__th" style={{ width: '14%' }}>Origin</th>
-                <th className="routes-table__th" style={{ width: '14%' }}>Destination</th>
-                <th className="routes-table__th" style={{ width: '8%' }}>Action</th>
+                <th className="routes-table__th" style={{ width: '8%' }}>ID</th>
+                <th className="routes-table__th" style={{ width: '32%' }}>Route Name</th>
+                <th className="routes-table__th" style={{ width: '24%' }}>Origin</th>
+                <th className="routes-table__th" style={{ width: '24%' }}>Destination</th>
+                <th className="routes-table__th" style={{ width: '12%' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="routes-table__empty">
+                  <td colSpan="5" className="routes-table__empty">
                     <div className="routes-loading-spinner">Loading routes…</div>
                   </td>
                 </tr>
               ) : filteredRoutes.length > 0 ? (
                 filteredRoutes.map((route) => {
-                  const stopsList = Array.isArray(route.stops) ? route.stops : [];
-                  const stopNames = stopsList.map((s) =>
-                    typeof s === 'string' ? s : s.stop_name || s.name || ''
-                  ).filter(Boolean);
-
                   return (
                     <tr key={route.id} className="routes-table__row">
                       {/* ID */}
@@ -284,38 +280,11 @@ const RoutesPage = () => {
                         #{route.id}
                       </td>
 
-                      {/* Route Code */}
-                      <td className="routes-table__td">
-                        <span className="route-code-badge">
-                          {route.route_code || '—'}
-                        </span>
-                      </td>
-
                       {/* Route Name */}
                       <td className="routes-table__td routes-table__td--name">
                         <div className="route-name-text">
                           {route.route_name || '—'}
                         </div>
-                      </td>
-
-                      {/* Stops Sequence */}
-                      <td className="routes-table__td">
-                        {stopNames.length > 0 ? (
-                          <div
-                            className="route-stops-cell"
-                            title={stopNames.join(' → ')}
-                          >
-                            <span className="route-stops-badge">
-                              {stopNames.length} {stopNames.length === 1 ? 'STOP' : 'STOPS'}
-                            </span>
-                            <span className="route-stops-chain">
-                              {stopNames.slice(0, 3).join(' → ')}
-                              {stopNames.length > 3 ? ` + ${stopNames.length - 3} more` : ''}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="route-no-stops">No stops configured</span>
-                        )}
                       </td>
 
                       {/* Origin */}
@@ -339,6 +308,18 @@ const RoutesPage = () => {
                         <div className="routes-actions">
                           <button
                             className="icon-btn"
+                            title="View stops"
+                            onClick={() => setViewStopsData({
+                              routeName: route.route_name,
+                              origin: route.origin,
+                              destination: route.destination,
+                              stops: route.stops,
+                            })}
+                          >
+                            <Eye size={15} strokeWidth={2} />
+                          </button>
+                          <button
+                            className="icon-btn"
                             title="Edit route"
                             onClick={() => openEditModal(route)}
                           >
@@ -358,7 +339,7 @@ const RoutesPage = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="7" className="routes-table__empty">
+                  <td colSpan="5" className="routes-table__empty">
                     {routes.length === 0
                       ? 'No routes have been added yet. Click "+ Add Route" to get started.'
                       : 'No routes match your search keyword.'}
@@ -391,20 +372,8 @@ const RoutesPage = () => {
               <div className="routes-modal__body">
                 {/* Basic Route Details Grid */}
                 <div className="routes-modal__grid">
-                  {/* Route Code */}
-                  <div className="routes-modal__field">
-                    <label className="form-label">Route Code *</label>
-                    <input
-                      className="form-input"
-                      placeholder="e.g. RT_SANKAR or 542"
-                      value={formData.route_code}
-                      onChange={(e) => updateField('route_code', e.target.value)}
-                      required
-                    />
-                  </div>
-
                   {/* Route Name */}
-                  <div className="routes-modal__field">
+                  <div className="routes-modal__field" style={{ gridColumn: 'span 2' }}>
                     <label className="form-label">Route Name *</label>
                     <input
                       className="form-input"
@@ -532,6 +501,16 @@ const RoutesPage = () => {
         </div>
       )}
 
+      {/* ── View Stops Modal ──────────────────────── */}
+      <ViewStopsModal
+        isOpen={Boolean(viewStopsData)}
+        onClose={() => setViewStopsData(null)}
+        routeName={viewStopsData?.routeName}
+        origin={viewStopsData?.origin}
+        destination={viewStopsData?.destination}
+        stops={viewStopsData?.stops}
+      />
+
       {/* ── Delete Confirmation Modal ─────────────── */}
       {routeToDelete && (
         <div className="modal-overlay" onClick={handleDeleteCancel}>
@@ -555,7 +534,7 @@ const RoutesPage = () => {
 
             <h2 className="routes-delete-modal__title">Delete Route</h2>
             <p className="routes-delete-modal__msg">
-              Are you sure you want to delete <strong>{routeToDelete.route_name}</strong> ({routeToDelete.route_code})?
+              Are you sure you want to delete <strong>{routeToDelete.route_name}</strong>?
               This will remove the route and its associated stops configuration.
             </p>
             <div className="routes-delete-modal__actions">
@@ -648,11 +627,13 @@ const RoutesPage = () => {
           border-radius: var(--radius-lg);
           border: 1px solid var(--color-border);
           box-shadow: var(--shadow-card);
-          overflow: hidden;
+          overflow-x: auto;
+          overflow-y: hidden;
         }
 
         .routes-table {
           width: 100%;
+          min-width: 760px;
           border-collapse: collapse;
           table-layout: fixed;
         }
@@ -756,18 +737,23 @@ const RoutesPage = () => {
         .route-loc-icon--origin { color: #3182ce; }
         .route-loc-icon--dest { color: #e53e3e; }
 
-        .routes-table__td--actions { overflow: visible; }
+        .routes-table__td--actions {
+          overflow: visible;
+          padding: 10px 6px;
+        }
         .routes-actions {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
+          gap: 6px;
+          flex-wrap: nowrap;
         }
 
         .routes-actions .icon-btn {
           width: 30px;
           height: 30px;
           border-radius: var(--radius-sm);
+          flex-shrink: 0;
         }
 
         .routes-table__empty {

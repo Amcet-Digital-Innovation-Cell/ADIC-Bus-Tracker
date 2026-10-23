@@ -10,11 +10,11 @@
  */
 
 const busService = require("../services/bus.service");
-const { success, error } = require("../utils/responseHelper");
+const { success } = require("../utils/responseHelper");
 
 /**
  * GET /api/buses
- * Returns all buses with full details.
+ * Returns all buses with full details and assigned route stops.
  */
 exports.getAllBuses = async (req, res, next) => {
   try {
@@ -27,7 +27,7 @@ exports.getAllBuses = async (req, res, next) => {
 
 /**
  * GET /api/buses/:id
- * Returns a single bus by ID.
+ * Returns a single bus by ID with its assigned route stops.
  */
 exports.getBusById = async (req, res, next) => {
   try {
@@ -40,7 +40,7 @@ exports.getBusById = async (req, res, next) => {
 
 /**
  * PUT /api/buses/:id
- * Updates bus metadata (driver, route, etc.).
+ * Updates bus metadata (driver, route_id, registration, etc.).
  * GPS fields (lat, lng, status) are intentionally blocked here.
  */
 exports.updateBus = async (req, res, next) => {
@@ -54,7 +54,7 @@ exports.updateBus = async (req, res, next) => {
 
 /**
  * POST /api/buses
- * Creates a new bus record.
+ * Creates a new bus record linked to a route.
  */
 exports.createBus = async (req, res, next) => {
   try {
@@ -73,32 +73,6 @@ exports.deleteBus = async (req, res, next) => {
   try {
     await busService.deleteBus(req.params.id);
     return success(res, null, "Bus deleted successfully");
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * GET /api/buses/:id/stops
- * Returns bus-specific stops for a bus by ID.
- */
-exports.getBusStops = async (req, res, next) => {
-  try {
-    const stops = await busService.getBusStops(req.params.id);
-    return success(res, stops, "Bus stops retrieved successfully");
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * PUT /api/buses/:id/stops
- * Replaces all stops for a bus by ID.
- */
-exports.updateBusStops = async (req, res, next) => {
-  try {
-    const stops = await busService.updateBusStops(req.params.id, req.body.stops || req.body);
-    return success(res, stops, "Bus stops updated successfully");
   } catch (err) {
     next(err);
   }

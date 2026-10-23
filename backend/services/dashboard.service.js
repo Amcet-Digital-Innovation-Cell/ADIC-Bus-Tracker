@@ -8,7 +8,7 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-const { supabase } = require("../config/supabase");
+const { db } = require("../config/supabase");
 
 /**
  * getFleetStats
@@ -23,15 +23,15 @@ const { supabase } = require("../config/supabase");
  * }>}
  */
 exports.getFleetStats = async () => {
-  // Fetch all buses
-  const { data: busesData, error: busesError } = await supabase
+  // Fetch all buses from transport schema
+  const { data: busesData, error: busesError } = await db.transport
     .from("buses")
     .select("status, updated_at, registration_number");
 
   if (busesError) throw busesError;
 
   // Fetch all gps telemetry to verify if coordinates exist
-  const { data: gpsData, error: gpsError } = await supabase
+  const { data: gpsData, error: gpsError } = await db.transport
     .from("gps_telemetry")
     .select("vehicle_number, latitude, longitude");
 

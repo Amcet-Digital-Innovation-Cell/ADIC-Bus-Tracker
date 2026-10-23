@@ -10,12 +10,64 @@ const { success } = require("../utils/responseHelper");
 
 /**
  * GET /api/routes
- * Returns all routes options.
+ * Returns all routes options with their stops.
  */
 exports.getAllRoutes = async (req, res, next) => {
     try {
         const routes = await routeService.getAllRoutes();
         return success(res, routes, "Routes retrieved successfully");
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * GET /api/routes/:id
+ * Returns a single route by ID.
+ */
+exports.getRouteById = async (req, res, next) => {
+    try {
+        const route = await routeService.getRouteById(req.params.id);
+        return success(res, route, "Route retrieved successfully");
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * POST /api/routes
+ * Creates a new route record with stops.
+ */
+exports.createRoute = async (req, res, next) => {
+    try {
+        const route = await routeService.createRoute(req.body);
+        return success(res, route, "Route created successfully", 201);
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * PUT /api/routes/:id
+ * Updates an existing route record and its stops.
+ */
+exports.updateRoute = async (req, res, next) => {
+    try {
+        const route = await routeService.updateRoute(req.params.id, req.body);
+        return success(res, route, "Route updated successfully");
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * DELETE /api/routes/:id
+ * Deletes a route record by primary key.
+ */
+exports.deleteRoute = async (req, res, next) => {
+    try {
+        await routeService.deleteRoute(req.params.id);
+        return success(res, null, "Route deleted successfully");
     } catch (err) {
         next(err);
     }

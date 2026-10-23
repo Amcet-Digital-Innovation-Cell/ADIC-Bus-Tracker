@@ -25,7 +25,7 @@
 const express  = require("express");
 const router   = express.Router();
 
-const { supabase }    = require("../config/supabase");
+const { db }          = require("../config/supabase");
 const { getIO }       = require("../config/socket");
 const realtimeState   = require("../utils/realtimeState");
 
@@ -69,8 +69,8 @@ router.post("/update", async (req, res) => {
     realtimeState.currentLocation = gpsData;
     realtimeState.gpsHistory.push(gpsData);
 
-    // Persist to Supabase gps_logs
-    const { data, error } = await supabase
+    // Persist to Supabase gps_logs in transport schema
+    const { data, error } = await db.transport
       .from("gps_logs")
       .insert([gpsData])
       .select();
@@ -126,7 +126,7 @@ router.get("/history", (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.get("/history/db", async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db.transport
       .from("gps_logs")
       .select("*")
       .order("received_at", { ascending: false });

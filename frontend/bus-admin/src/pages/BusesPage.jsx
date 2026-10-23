@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, X, Search, ChevronDown, Route as RouteIcon, MapPin } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Search, ChevronDown, Route as RouteIcon, MapPin, Eye } from 'lucide-react';
+import ViewStopsModal from '../components/ViewStopsModal';
 import apiClient from '../lib/apiClient';
 
 const mapFromDb = (row) => ({
@@ -37,6 +38,7 @@ function StatusBadge({ status }) {
 
 const BusesPage = ({ buses, setBuses }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewStopsData, setViewStopsData] = useState(null);
   const [editingBus, setEditingBus] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [busToDelete, setBusToDelete] = useState(null);
@@ -284,14 +286,14 @@ const BusesPage = ({ buses, setBuses }) => {
           <table className="buses-table">
             <thead>
               <tr>
-                <th className="buses-table__th" style={{ width: '8%' }}>Bus ID</th>
-                <th className="buses-table__th" style={{ width: '28%' }}>Assigned Route & Stops</th>
-                <th className="buses-table__th" style={{ width: '13%' }}>Bus No</th>
-                <th className="buses-table__th" style={{ width: '13%' }}>Driver</th>
-                <th className="buses-table__th" style={{ width: '13%' }}>Contact</th>
+                <th className="buses-table__th" style={{ width: '7%' }}>Bus ID</th>
+                <th className="buses-table__th" style={{ width: '21%' }}>Assigned Route & Stops</th>
+                <th className="buses-table__th" style={{ width: '11%' }}>Bus No</th>
+                <th className="buses-table__th" style={{ width: '12%' }}>Driver</th>
+                <th className="buses-table__th" style={{ width: '12%' }}>Contact</th>
                 <th className="buses-table__th" style={{ width: '11%' }}>License</th>
-                <th className="buses-table__th" style={{ width: '8%' }}>Status</th>
-                <th className="buses-table__th" style={{ width: '6%' }}>Action</th>
+                <th className="buses-table__th" style={{ width: '12%' }}>Status</th>
+                <th className="buses-table__th" style={{ width: '14%' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -353,6 +355,25 @@ const BusesPage = ({ buses, setBuses }) => {
                       {/* Actions */}
                       <td className="buses-table__td buses-table__td--actions">
                         <div className="buses-actions">
+                          <button
+                            className="icon-btn"
+                            title="View stops"
+                            onClick={() => {
+                              const matchedRoute = routesList.find(
+                                (r) => (bus.route_id && r.id === bus.route_id) || (bus.route && r.route_name && r.route_name.toLowerCase() === bus.route.toLowerCase())
+                              );
+                              const stopsToDisplay = (bus.stops && bus.stops.length > 0) ? bus.stops : (matchedRoute?.stops || []);
+                              setViewStopsData({
+                                routeName: bus.route || matchedRoute?.route_name || (bus.busId ? `Bus ${bus.busId}` : 'Bus Route'),
+                                busNumber: bus.busNo ? `Bus ${bus.busId || ''} (${bus.busNo})` : (bus.busId ? `Bus ${bus.busId}` : ''),
+                                origin: matchedRoute?.origin || '',
+                                destination: matchedRoute?.destination || '',
+                                stops: stopsToDisplay,
+                              });
+                            }}
+                          >
+                            <Eye size={15} strokeWidth={2} />
+                          </button>
                           <button
                             className="icon-btn"
                             title="Edit bus"
@@ -448,7 +469,7 @@ const BusesPage = ({ buses, setBuses }) => {
                             const stopCount = Array.isArray(r.stops) ? r.stops.length : 0;
                             return (
                               <option key={r.id} value={r.id}>
-                                {r.route_name || r.routeName} {r.route_code ? `(${r.route_code})` : ''} — {stopCount} {stopCount === 1 ? 'stop' : 'stops'}
+                                {r.route_name || r.routeName} — {stopCount} {stopCount === 1 ? 'stop' : 'stops'}
                               </option>
                             );
                           })}
@@ -559,6 +580,17 @@ const BusesPage = ({ buses, setBuses }) => {
           </div>
         </div>
       )}
+
+      {/* ── View Stops Modal ──────────────────────── */}
+      <ViewStopsModal
+        isOpen={Boolean(viewStopsData)}
+        onClose={() => setViewStopsData(null)}
+        routeName={viewStopsData?.routeName}
+        busNumber={viewStopsData?.busNumber}
+        origin={viewStopsData?.origin}
+        destination={viewStopsData?.destination}
+        stops={viewStopsData?.stops}
+      />
 
       {/* ── Delete confirmation modal ─────────────── */}
       {busToDelete && (
@@ -685,11 +717,13 @@ const BusesPage = ({ buses, setBuses }) => {
           border-radius: var(--radius-lg);
           border: 1px solid var(--color-border);
           box-shadow: var(--shadow-card);
-          overflow: hidden;
+          overflow-x: auto;
+          overflow-y: hidden;
         }
 
         .buses-table {
           width: 100%;
+          min-width: 960px;
           border-collapse: collapse;
           table-layout: fixed;
         }
@@ -775,7 +809,7 @@ const BusesPage = ({ buses, setBuses }) => {
         .bus-stops-chain {
           font-size: 11px;
           color: var(--color-text-muted);
-          max-width: 160px;
+          max-width: 140px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -787,18 +821,23 @@ const BusesPage = ({ buses, setBuses }) => {
           font-style: italic;
         }
 
-        .buses-table__td--actions { overflow: visible; }
+        .buses-table__td--actions {
+          overflow: visible;
+          padding: 10px 6px;
+        }
         .buses-actions {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
+          gap: 6px;
+          flex-wrap: nowrap;
         }
 
         .buses-actions .icon-btn {
           width: 30px;
           height: 30px;
           border-radius: var(--radius-sm);
+          flex-shrink: 0;
         }
 
         .buses-table__empty {

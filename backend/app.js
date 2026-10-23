@@ -1,3 +1,6 @@
+require("dotenv").config({ path: require("path").resolve(__dirname, ".env") });
+require("dotenv").config();
+
 /**
  * app.js
  * ─────────────────────────────────────────────────────────────
@@ -33,6 +36,8 @@ const gpsRoutes = require("./gps/gps.routes");
 const routeRoutes = require("./routes/route.routes");
 const publicRoutes = require("./routes/public.routes");
 const realtimeGpsRoutes = require("./routes/realtimeGps.routes");
+const studentRoutes = require("./routes/students");
+const adminRoutes = require("./routes/admin.routes");
 
 const app = express();
 
@@ -61,8 +66,17 @@ app.use(cors(corsOptions));
 app.options("/{*path}", cors(corsOptions)); // Pre-flight (Express v5 wildcard syntax)
 
 // ── Body parsing & logging ────────────────────────────────────────────────
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+
+// Normalize multiple consecutive slashes in request URL (e.g. //api/students -> /api/students)
+app.use((req, res, next) => {
+  if (req.url && req.url.startsWith("//")) {
+    req.url = req.url.replace(/^\/+/, "/");
+  }
+  next();
+});
+
 app.use(logger);
 
 // ── Health check (public) ─────────────────────────────────────────────────
@@ -98,6 +112,14 @@ app.use("/api/gps", authenticate, gpsRoutes);
 
 // Real-time device GPS push endpoints (direct device → server)
 app.use("/api/realtime/gps", authenticate, realtimeGpsRoutes);
+
+// Student management routes (registration, bulk import, student list)
+// Mounted on both /api/students and /api/admin/students for full frontend compatibility
+app.use("/api/students", studentRoutes);
+app.use("/api/admin/students", studentRoutes);
+
+// Admin system management routes (configurations in admin schema)
+app.use("/api/admin", authenticate, adminRoutes);
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────
 app.use((req, res, next) => {

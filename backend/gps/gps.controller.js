@@ -19,12 +19,11 @@ const { parseGpsResponse } = require("./gpsParser");
 const { upsertGpsTelemetry } = require("./gpsUpdater");
 const { broadcastBusLocation } = require("../sockets/location.socket");
 const { getSchedulerStatus } = require("./gpsScheduler");
-const { success, error } = require("../utils/responseHelper");
-const { adminSupabase, supabase } = require("../config/supabase");
-const gpsLogger = require("./gpsLogger");
+const { success } = require("../utils/responseHelper");
+const { db } = require("../config/supabase");
 
-/** Supabase client for reads — anon key is fine for SELECT */
-const readClient = () => adminSupabase || supabase;
+/** Supabase client for reads — scoped to transport schema */
+const readClient = () => db.transport;
 
 // ── Safe GPS response fields (never expose raw_payload to frontend) ────────
 const SAFE_FIELDS = [

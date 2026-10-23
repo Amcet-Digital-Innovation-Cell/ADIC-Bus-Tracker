@@ -1,3 +1,7 @@
+// ── 1. Load environment variables at the absolute top ───────────────────────
+require("dotenv").config({ path: require("path").resolve(__dirname, ".env") });
+require("dotenv").config();
+
 /**
  * server.js
  * ─────────────────────────────────────────────────────────────
@@ -17,27 +21,18 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-const http   = require("http");
-const path   = require("path");
+const http = require("http");
+const path = require("path");
 
-// ── Load environment variables ─────────────────────────────────────────────
-// Must be the FIRST thing that runs. config/env.js also validates
-// required variables and exits the process if any are missing.
-require("./config/env");
-
-const app    = require("./app");
+const app = require("./app");
 const config = require("./config/env");
-const { initSocket }        = require("./config/socket");
+const { initSocket } = require("./config/socket");
 const { startGpsScheduler } = require("./gps/gpsScheduler");
-
+const { verifyBrevoConnection } = require("./utils/email");
 // ── Create HTTP server ─────────────────────────────────────────────────────
-// Using http.createServer() instead of app.listen() so that
-// Socket.IO can be attached to the same underlying server.
 const httpServer = http.createServer(app);
 
 // ── Attach Socket.IO ───────────────────────────────────────────────────────
-// Must happen before httpServer.listen() so clients can connect
-// immediately when the server starts.
 initSocket(httpServer);
 
 // ── Start listening ────────────────────────────────────────────────────────
@@ -53,16 +48,15 @@ httpServer.listen(config.port, () => {
   console.log("  Routes:");
   console.log(`  🔒  GET  /api/dashboard          (SkyNav stats)`);
   console.log(`  🔒  GET  /api/buses              (fleet list)`);
+  console.log(`  🔒  POST /api/students/import    (Student Registration)`); // Added to console logs
   console.log(`  🔒  GET  /api/gps/sync           (manual SkyNav sync)`);
   console.log(`  🔒  GET  /api/gps/status         (scheduler status)`);
   console.log(`  🔒  POST /api/realtime/gps/update (device GPS push)`);
   console.log(`  🔒  GET  /api/realtime/gps/live  (latest GPS location)`);
   console.log("═══════════════════════════════════════════════");
 
-  // ── Start GPS scheduler AFTER server is ready ──────────────
-  // This ensures Socket.IO is initialized before the first
-  // GPS sync tries to broadcast events.
   startGpsScheduler();
+  verifyBrevoConnection();
 });
 
 // ── Graceful shutdown handler ──────────────────────────────────────────────
