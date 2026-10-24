@@ -3,22 +3,16 @@
  * ─────────────────────────────────────────────────────────────
  * Bus data access layer.
  *
- * This service is READ-ONLY for bus metadata.
+ * Bus stops are sourced directly from the bus's associated route
+ * in transport.bus_routes (stops JSONB column).
  * GPS coordinate updates are handled exclusively by gpsUpdater.js.
- *
- * Rules (per architecture requirements):
- *   ✅ SELECT  — allowed (read bus list, read single bus)
- *   ✅ UPDATE  — allowed for bus metadata edits (name, route, etc.)
- *   ❌ INSERT  — NEVER insert buses (buses are pre-seeded)
- *   ❌ DELETE  — NEVER delete buses
- *   ❌ CREATE TABLE — NEVER (schema is frozen)
  * ─────────────────────────────────────────────────────────────
  */
 
-const { supabase, adminSupabase } = require("../config/supabase");
+const { db } = require("../config/supabase");
 
-/** Use admin client when available (bypasses RLS for writes) */
-const writeClient = () => adminSupabase || supabase;
+/** Use schema-scoped transport client (targets transport schema) */
+const writeClient = () => db.transport;
 
 /**
  * mergeGpsToBuses
@@ -71,31 +65,74 @@ const mergeGpsToBuses = async (busOrBuses) => {
 };
 
 /**
+ * Normalizes stops array into a clean JSON array of objects
+ */
+const normalizeStops = (stops) => {
+  if (!stops) return [];
+  let list = stops;
+  if (typeof list === "string") {
+    try {
+      list = JSON.parse(list);
+    } catch (e) {
+      list = [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+
+  return list
+    .map((s, index) => {
+      if (typeof s === "string") {
+        const name = s.trim().toUpperCase();
+        return name ? { id: index + 1, stop_name: name, stop_order: index + 1 } : null;
+      }
+      if (typeof s === "object" && s !== null) {
+        const name = String(s.stop_name || s.name || "").trim().toUpperCase();
+        return name
+          ? {
+              id: s.id !== undefined ? s.id : index + 1,
+              stop_name: name,
+              stop_order: s.stop_order !== undefined ? Number(s.stop_order) : index + 1,
+            }
+          : null;
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.stop_order - b.stop_order);
+};
+
+/**
  * getAllBuses
- * Returns all buses ordered by id ascending.
+ * Returns all buses ordered by id ascending with their route-specific stops attached.
  *
  * @returns {Promise<object[]>}
  */
 exports.getAllBuses = async () => {
-  const { data, error } = await writeClient()
+  const client = writeClient();
+  const { data: busesData, error: busesError } = await client
     .from("buses")
     .select(`
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .order("id", { ascending: true });
 
-  if (error) throw error;
+  if (busesError) throw busesError;
 
-  const mapped = (data || []).map((bus) => {
-    const route_name = bus.bus_routes ? bus.bus_routes.routes : bus.route_name;
+  const mapped = (busesData || []).map((bus) => {
+    const route = bus.bus_routes;
+    const route_name = route ? route.route_name : bus.route_name;
+    const stops = route && route.stops ? normalizeStops(route.stops) : [];
     const { bus_routes, ...rest } = bus;
+
     return {
       ...rest,
       route_name,
+      stops,
     };
   });
 
@@ -104,19 +141,21 @@ exports.getAllBuses = async () => {
 
 /**
  * getBusById
- * Returns a single bus by primary key.
+ * Returns a single bus by primary key with its route-based stops.
  *
  * @param {string|number} id
  * @returns {Promise<object>}
  */
 exports.getBusById = async (id) => {
-  const { data, error } = await writeClient()
+  const client = writeClient();
+  const { data, error } = await client
     .from("buses")
     .select(`
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .eq("id", id)
@@ -128,11 +167,15 @@ exports.getBusById = async (id) => {
     throw err;
   }
 
-  const route_name = data.bus_routes ? data.bus_routes.routes : data.route_name;
+  const route = data.bus_routes;
+  const route_name = route ? route.route_name : data.route_name;
+  const stops = route && route.stops ? normalizeStops(route.stops) : [];
   const { bus_routes, ...rest } = data;
+
   const bus = {
     ...rest,
     route_name,
+    stops,
   };
 
   return await mergeGpsToBuses(bus);
@@ -140,7 +183,7 @@ exports.getBusById = async (id) => {
 
 /**
  * updateBusMetadata
- * Updates non-GPS bus fields (driver name, route, etc.).
+ * Updates non-GPS bus fields (driver name, route_id, registration, etc.).
  * Does NOT update latitude, longitude, or status (GPS pipeline handles those).
  *
  * @param {string|number} id
@@ -149,20 +192,23 @@ exports.getBusById = async (id) => {
  */
 exports.updateBusMetadata = async (id, fields) => {
   // Strip GPS fields — they must only be updated via the GPS pipeline
-  const { latitude, longitude, status, updated_at, ...safeFields } = fields;
+  const { latitude, longitude, status, updated_at, stops, ...safeFields } = fields;
+
+  const toUpper = (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val);
+  const cleanBusNo = (val) => (typeof val === 'string' ? val.replace(/\s+/g, '').toUpperCase() : val);
 
   // Map frontend field aliases to database column names
   const payload = {
-    ...(safeFields.bus_number !== undefined && { bus_number: safeFields.bus_number }),
-    ...(safeFields.busId !== undefined && { bus_number: safeFields.busId }),
-    ...(safeFields.registration_number !== undefined && { registration_number: safeFields.registration_number }),
-    ...(safeFields.busNo !== undefined && { registration_number: safeFields.busNo }),
-    ...(safeFields.driver_name !== undefined && { driver_name: safeFields.driver_name }),
-    ...(safeFields.driver !== undefined && { driver_name: safeFields.driver }),
-    ...(safeFields.driver_phone !== undefined && { driver_phone: safeFields.driver_phone }),
-    ...(safeFields.contact !== undefined && { driver_phone: safeFields.contact }),
-    ...(safeFields.license_number !== undefined && { license_number: safeFields.license_number }),
-    ...(safeFields.license !== undefined && { license_number: safeFields.license }),
+    ...(safeFields.bus_number !== undefined && { bus_number: toUpper(safeFields.bus_number) }),
+    ...(safeFields.busId !== undefined && { bus_number: toUpper(safeFields.busId) }),
+    ...(safeFields.registration_number !== undefined && { registration_number: cleanBusNo(safeFields.registration_number) }),
+    ...(safeFields.busNo !== undefined && { registration_number: cleanBusNo(safeFields.busNo) }),
+    ...(safeFields.driver_name !== undefined && { driver_name: toUpper(safeFields.driver_name) }),
+    ...(safeFields.driver !== undefined && { driver_name: toUpper(safeFields.driver) }),
+    ...(safeFields.driver_phone !== undefined && { driver_phone: toUpper(safeFields.driver_phone) }),
+    ...(safeFields.contact !== undefined && { driver_phone: toUpper(safeFields.contact) }),
+    ...(safeFields.license_number !== undefined && { license_number: toUpper(safeFields.license_number) }),
+    ...(safeFields.license !== undefined && { license_number: toUpper(safeFields.license) }),
     ...(safeFields.capacity !== undefined && { capacity: safeFields.capacity }),
   };
 
@@ -171,81 +217,81 @@ exports.updateBusMetadata = async (id, fields) => {
   if (routeIdVal !== undefined && routeIdVal !== null && routeIdVal !== "") {
     const { data: routeData, error: routeError } = await writeClient()
       .from("bus_routes")
-      .select("id, routes")
+      .select("id, route_name")
       .eq("id", routeIdVal)
       .maybeSingle();
 
-    if (routeError || !routeData) {
-      const err = new Error("Invalid route selected");
+    if (routeError) {
+      console.error(`[updateBusMetadata] Route lookup error for route_id ${routeIdVal}:`, routeError.message);
+      const err = new Error(`Route lookup failed: ${routeError.message}`);
+      err.status = 500;
+      throw err;
+    }
+
+    if (!routeData) {
+      console.error(`[updateBusMetadata] Route not found for route_id ${routeIdVal}`);
+      const err = new Error(`Invalid route selected (id: ${routeIdVal})`);
       err.status = 400;
       throw err;
     }
 
+    const fetchedRouteName = routeData.route_name;
     payload.route_id = routeData.id;
-    payload.route_name = routeData.routes;
+    payload.route_name = fetchedRouteName ? fetchedRouteName.toUpperCase() : null;
   } else if (routeIdVal === null || routeIdVal === "") {
     payload.route_id = null;
     payload.route_name = null;
   }
 
-  if (Object.keys(payload).length === 0) {
-    throw Object.assign(new Error("No valid fields to update"), { status: 400 });
+  if (Object.keys(payload).length > 0) {
+    const { error } = await writeClient()
+      .from("buses")
+      .update(payload)
+      .eq("id", id);
+
+    if (error) {
+      console.error(`[updateBusMetadata] DB update error for bus id ${id}:`, error.message, error.code);
+      throw error;
+    }
   }
 
-  const { data, error } = await writeClient()
-    .from("buses")
-    .update(payload)
-    .eq("id", id)
-    .select(`
-      *,
-      bus_routes (
-        id,
-        routes
-      )
-    `)
-    .single();
-
-  if (error) throw error;
-
-  const route_name = data.bus_routes ? data.bus_routes.routes : data.route_name;
-  const { bus_routes, ...rest } = data;
-  const bus = {
-    ...rest,
-    route_name,
-  };
-
-  return await mergeGpsToBuses(bus);
+  return await exports.getBusById(id);
 };
 
 /**
  * createBus
- * Creates a new bus record in the buses table.
+ * Creates a new bus record in the buses table linked to a route in bus_routes.
  *
  * @param {object} fields
  * @returns {Promise<object>}
  */
 exports.createBus = async (fields) => {
+  const { stops, ...safeFields } = fields;
+
+  const toUpper = (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val);
+  const cleanBusNo = (val) => (typeof val === 'string' ? val.replace(/\s+/g, '').toUpperCase() : val);
+
   const payload = {
-    ...(fields.bus_number !== undefined && { bus_number: fields.bus_number }),
-    ...(fields.busId !== undefined && { bus_number: fields.busId }),
-    ...(fields.registration_number !== undefined && { registration_number: fields.registration_number }),
-    ...(fields.busNo !== undefined && { registration_number: fields.busNo }),
-    ...(fields.driver_name !== undefined && { driver_name: fields.driver_name }),
-    ...(fields.driver !== undefined && { driver_name: fields.driver }),
-    ...(fields.driver_phone !== undefined && { driver_phone: fields.driver_phone }),
-    ...(fields.contact !== undefined && { driver_phone: fields.contact }),
-    ...(fields.license_number !== undefined && { license_number: fields.license_number }),
-    ...(fields.license !== undefined && { license_number: fields.license }),
-    ...(fields.capacity !== undefined && { capacity: fields.capacity }),
+    ...(safeFields.bus_number !== undefined && { bus_number: toUpper(safeFields.bus_number) }),
+    ...(safeFields.busId !== undefined && { bus_number: toUpper(safeFields.busId) }),
+    ...(safeFields.registration_number !== undefined && { registration_number: cleanBusNo(safeFields.registration_number) }),
+    ...(safeFields.busNo !== undefined && { registration_number: cleanBusNo(safeFields.busNo) }),
+    ...(safeFields.driver_name !== undefined && { driver_name: toUpper(safeFields.driver_name) }),
+    ...(safeFields.driver !== undefined && { driver_name: toUpper(safeFields.driver) }),
+    ...(safeFields.driver_phone !== undefined && { driver_phone: toUpper(safeFields.driver_phone) }),
+    ...(safeFields.contact !== undefined && { driver_phone: toUpper(safeFields.contact) }),
+    ...(safeFields.license_number !== undefined && { license_number: toUpper(safeFields.license_number) }),
+    ...(safeFields.license !== undefined && { license_number: toUpper(safeFields.license) }),
+    ...(safeFields.capacity !== undefined && { capacity: safeFields.capacity }),
     status: "Pending (GPS)",
   };
 
-  const routeIdVal = fields.route_id !== undefined ? fields.route_id : fields.routeId;
+  const routeIdVal = safeFields.route_id !== undefined ? safeFields.route_id : safeFields.routeId;
 
   if (routeIdVal !== undefined && routeIdVal !== null && routeIdVal !== "") {
     const { data: routeData, error: routeError } = await writeClient()
       .from("bus_routes")
-      .select("id, routes")
+      .select("id, route_name")
       .eq("id", routeIdVal)
       .maybeSingle();
 
@@ -256,7 +302,7 @@ exports.createBus = async (fields) => {
     }
 
     payload.route_id = routeData.id;
-    payload.route_name = routeData.routes;
+    payload.route_name = routeData.route_name;
   } else {
     const err = new Error("Route selection is required");
     err.status = 400;
@@ -270,21 +316,15 @@ exports.createBus = async (fields) => {
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .single();
 
   if (error) throw error;
 
-  const route_name = data.bus_routes ? data.bus_routes.routes : data.route_name;
-  const { bus_routes, ...rest } = data;
-  const bus = {
-    ...rest,
-    route_name,
-  };
-
-  return await mergeGpsToBuses(bus);
+  return await exports.getBusById(data.id);
 };
 
 /**
@@ -295,7 +335,8 @@ exports.createBus = async (fields) => {
  * @returns {Promise<void>}
  */
 exports.deleteBus = async (id) => {
-  const { error } = await writeClient()
+  const client = writeClient();
+  const { error } = await client
     .from("buses")
     .delete()
     .eq("id", id);

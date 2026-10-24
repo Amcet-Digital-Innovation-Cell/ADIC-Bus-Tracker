@@ -94,6 +94,16 @@ const config = {
   socket: {
     corsOrigin: process.env.FRONTEND_URL || "*",
   },
+
+  // Brevo HTTP REST API Email Service
+  email: {
+    provider: "Brevo HTTP REST API",
+    endpoint: "https://api.brevo.com/v3/smtp/email",
+    apiKey: process.env.BREVO_API_KEY || null,
+    senderEmail: process.env.SENDER_EMAIL || process.env.EMAIL_FROM || null,
+    senderName: process.env.SENDER_NAME || "AMCET Transport",
+    isConfigured: !!process.env.BREVO_API_KEY,
+  },
 };
 
 module.exports = config;

@@ -21,7 +21,8 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://bustransit-g4ks.onrender.com";
+const rawApiBase = import.meta.env.VITE_API_URL || "https://bustransit-g4ks.onrender.com";
+const API_BASE = rawApiBase.replace(/\/+$/, "");
 const INTERPOLATION_INTERVAL_MS = 200;
 const GPS_PACKET_INTERVAL_MS = 60000; // Match GPS_POLL_INTERVAL_MS in backend
 

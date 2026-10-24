@@ -4,7 +4,7 @@
  * Real-time GPS endpoints (device → server).
  *
  * These endpoints are designed to receive raw GPS data pushed
- * from hardware GPS devices or the Traccar server, and
+ * from hardware GPS devices or simulators, and
  * immediately broadcast the position via Socket.IO.
  *
  * Unlike the SkyNav scheduler (which PULLS from SkyNav every
@@ -17,18 +17,15 @@
  *   GET    /api/realtime/gps/history     — Full history (memory)
  *   GET    /api/realtime/gps/history/db  — Full history (Supabase)
  *   DELETE /api/realtime/gps/history     — Clear in-memory history
- *   POST   /traccar/webhook              — Traccar server webhook
  *
- * Note: /traccar/webhook is mounted as a PUBLIC route (no auth)
- * in app.js because Traccar cannot send a user JWT.
- * The other routes are protected by the Supabase JWT middleware.
+ * All routes are protected by the Supabase JWT middleware.
  * ─────────────────────────────────────────────────────────────
  */
 
 const express  = require("express");
 const router   = express.Router();
 
-const { supabase }    = require("../config/supabase");
+const { db }          = require("../config/supabase");
 const { getIO }       = require("../config/socket");
 const realtimeState   = require("../utils/realtimeState");
 
@@ -72,8 +69,8 @@ router.post("/update", async (req, res) => {
     realtimeState.currentLocation = gpsData;
     realtimeState.gpsHistory.push(gpsData);
 
-    // Persist to Supabase gps_logs
-    const { data, error } = await supabase
+    // Persist to Supabase gps_logs in transport schema
+    const { data, error } = await db.transport
       .from("gps_logs")
       .insert([gpsData])
       .select();
@@ -129,7 +126,7 @@ router.get("/history", (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.get("/history/db", async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db.transport
       .from("gps_logs")
       .select("*")
       .order("received_at", { ascending: false });

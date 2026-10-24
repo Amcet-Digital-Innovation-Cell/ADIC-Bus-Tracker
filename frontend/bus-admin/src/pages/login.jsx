@@ -1,17 +1,9 @@
 import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import supabase from '../lib/supabaseClient';
 
 /**
- * Login page — Authentication flow updated to use Supabase directly.
- *
- * Previously: Frontend called POST /api/auth/login on the Express backend.
- * Now:        Frontend calls supabase.auth.signInWithPassword() directly.
- *
- * The Supabase access token is then passed to App.jsx via onLogin(),
- * stored in sessionStorage, and sent as "Authorization: Bearer <token>"
- * on every protected API request.
- *
- * UI is UNCHANGED — only the login logic was updated.
+ * Login page — Authentication flow using Supabase directly.
  */
 const Login = ({ onLogin }) => {
   const [email, setEmail]               = useState('');
@@ -26,10 +18,6 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      // ── Authenticate directly with Supabase ──────────────────────
-      // The backend is NOT involved in authentication.
-      // Supabase validates credentials and returns a session with
-      // an access_token (JWT) that we send to the backend on API calls.
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -41,7 +29,6 @@ const Login = ({ onLogin }) => {
 
       const { session, user } = data;
 
-      // Pass the Supabase access token and email to App.jsx
       if (onLogin) {
         onLogin({
           email: user.email,
@@ -56,131 +43,240 @@ const Login = ({ onLogin }) => {
   };
 
   return (
-    <div className="login-page-container">
-      {/* Internal CSS — unchanged */}
-      <style>{`
-        :root {
-          --navy: #243447;
-          --orange: #ff9500;
-          --text-light: #ffffff;
-          --text-muted: #8b9cc9;
-          --input-bg: #ffffff;
-        }
-        .login-page-container {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 100vh;
-          width: 100%;
-          background: #F5EFE6;
-          padding: 20px;
-          font-family: 'Inter', sans-serif;
-          box-sizing: border-box;
-        }
-        .form-card {
-          width: 100%;
-          max-width: 420px;
-          background: #243447;
-          border-radius: 20px;
-          padding: 48px 36px;
-          box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
-          color: #ffffff;
-        }
-        .form-heading { margin-bottom: 32px; text-align: center; }
-        .form-heading h2 { margin: 0; font-size: 1.8rem; }
-        .form-heading p { margin: 8px 0 0; font-size: 0.95rem; color: #ff9500; }
-        form { display: flex; flex-direction: column; gap: 18px; }
-        .form-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-size: 0.92rem; font-weight: 600; color: #ff9500; }
-        input {
-          width: 100%;
-          padding: 12px 14px;
-          border-radius: 8px;
-          background: #ffffff;
-          border: 1px solid #e0e0e0;
-          color: #333;
-          font-size: 0.95rem;
-          outline: none;
-        }
-        .password-input-wrapper { position: relative; display: flex; align-items: center; }
-        .password-input-wrapper input { padding-right: 40px; }
-        .toggle-password {
-          position: absolute;
-          right: 12px;
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 1.1rem;
-        }
-        .sign-in-btn {
-          margin-top: 8px;
-          padding: 12px 16px;
-          border-radius: 8px;
-          background: #ff9500;
-          color: #2c3e50;
-          border: none;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        .reset-message { color: #ff9500; font-size: 0.85rem; text-align: center; }
-        .error-banner {
-          background: rgba(239,68,68,0.15);
-          border: 1px solid rgba(239,68,68,0.4);
-          color: #fca5a5;
-          border-radius: 8px;
-          padding: 10px 14px;
-          font-size: 0.88rem;
-          text-align: center;
-        }
-        .sign-in-btn:disabled { opacity: 0.65; cursor: not-allowed; }
-      `}</style>
+    <div className="login-page">
+      <div className="login-card">
 
-      <div className="form-card">
-        <div className="form-heading">
-          <h2>Welcome back</h2>
-          <p>Sign in to access the admin dashboard</p>
+        {/* Brand header */}
+        <div className="login-card__header">
+          <h1 className="login-card__title">Welcome back</h1>
+          <p className="login-card__subtitle">Sign in to access the admin dashboard</p>
         </div>
 
-        <form onSubmit={handleLogin}>
-          {error && <div className="error-banner">{error}</div>}
-          <div className="form-group">
-            <label htmlFor="email">Email address</label>
-            <input 
-              type="email" 
-              id="email" 
-              placeholder="you@example.com" 
+        <form className="login-form" onSubmit={handleLogin} noValidate>
+
+          {/* Error banner */}
+          {error && (
+            <div className="login-error" role="alert">
+              {error}
+            </div>
+          )}
+
+          {/* Email field */}
+          <div className="login-field">
+            <label htmlFor="login-email" className="login-label">Email address</label>
+            <input
+              id="login-email"
+              type="email"
+              className="login-input"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required 
+              required
+              autoComplete="email"
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <div className="password-input-wrapper">
-              <input 
-                type={showPassword ? "text" : "password"} 
-                id="password" 
+          {/* Password field */}
+          <div className="login-field">
+            <label htmlFor="login-password" className="login-label">Password</label>
+            <div className="login-password-wrap">
+              <input
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                className="login-input login-input--password"
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
               />
               <button
                 type="button"
-                className="toggle-password"
+                className="login-eye-btn"
                 onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                title={showPassword ? 'Hide password' : 'Show password'}
               >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword
+                  ? <EyeOff size={16} strokeWidth={2} />
+                  : <Eye    size={16} strokeWidth={2} />
+                }
               </button>
             </div>
           </div>
 
-          <button type="submit" className="sign-in-btn" disabled={loading}>
+          {/* Submit */}
+          <button
+            id="sign-in-btn"
+            type="submit"
+            className="login-submit-btn"
+            disabled={loading}
+          >
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
+
         </form>
       </div>
+
+      {/* Inline styles scoped to login page */}
+      <style>{`
+        .login-page {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          width: 100%;
+          background: #F0EDE8;
+          padding: 20px;
+        }
+
+        .login-card {
+          width: 100%;
+          max-width: 420px;
+          background: #243447;
+          border-radius: 22px;
+          padding: 44px 36px 40px;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.28), 0 6px 20px rgba(0,0,0,0.14);
+          color: #ffffff;
+        }
+
+        .login-card__header {
+          text-align: center;
+          margin-bottom: 32px;
+        }
+
+        .login-card__title {
+          font-size: 26px;
+          font-weight: 800;
+          color: #ffffff;
+          letter-spacing: -0.02em;
+          margin: 0 0 8px;
+        }
+
+        .login-card__subtitle {
+          font-size: 13.5px;
+          color: #ff9500;
+          font-weight: 500;
+          margin: 0;
+        }
+
+        .login-form {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        .login-error {
+          background: rgba(239,68,68,0.15);
+          border: 1px solid rgba(239,68,68,0.4);
+          color: #fca5a5;
+          border-radius: 10px;
+          padding: 11px 14px;
+          font-size: 13px;
+          text-align: center;
+          line-height: 1.5;
+        }
+
+        .login-field {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        .login-label {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #ff9500;
+        }
+
+        .login-input {
+          width: 100%;
+          height: 44px;
+          padding: 0 14px;
+          border-radius: 10px;
+          background: #f7f9fc;
+          border: 1.5px solid rgba(255,255,255,0.12);
+          color: #1a202c;
+          font-size: 14px;
+          font-weight: 500;
+          outline: none;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .login-input:hover {
+          background: #edf2f7;
+          border-color: rgba(255,255,255,0.2);
+        }
+
+        .login-input:focus {
+          background: #ffffff;
+          border-color: #ff9500;
+          box-shadow: 0 0 0 3px rgba(255,149,0,0.18), inset 0 2px 4px rgba(0,0,0,0.04);
+        }
+
+        .login-input--password {
+          padding-right: 44px;
+        }
+
+        .login-password-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .login-eye-btn {
+          position: absolute;
+          right: 12px;
+          background: none;
+          border: none;
+          color: #9babc0;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px;
+          border-radius: 6px;
+          transition: color 0.15s ease;
+        }
+
+        .login-eye-btn:hover { color: #64748b; }
+
+        .login-submit-btn {
+          margin-top: 4px;
+          height: 48px;
+          width: 100%;
+          border-radius: 12px;
+          background: #ff9500;
+          color: #1a2433;
+          border: none;
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(255,149,0,0.35);
+          transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+        }
+
+        .login-submit-btn:hover {
+          background: #e08600;
+          box-shadow: 0 6px 20px rgba(255,149,0,0.45);
+          transform: translateY(-1px);
+        }
+
+        .login-submit-btn:active {
+          transform: scale(0.98);
+          box-shadow: 0 2px 8px rgba(255,149,0,0.25);
+        }
+
+        .login-submit-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+        }
+      `}</style>
     </div>
   );
 };

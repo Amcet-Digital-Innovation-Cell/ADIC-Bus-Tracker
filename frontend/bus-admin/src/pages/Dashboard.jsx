@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bus, Radio, GraduationCap, Map, X, Maximize2 } from 'lucide-react';
 import MapView from '../components/MapView';
 import BusList from '../components/BusList';
 import BusInfoCard from '../components/BusInfoCard';
 import TrackLocationView from '../components/TrackLocationView';
+import { studentService } from '../lib/studentService';
 import './Dashboard.css';
 
 function KpiCard({ variant, icon: Icon, iconColor, label, value, sub }) {
@@ -29,8 +30,14 @@ export default function Dashboard({ buses, authToken }) {
   const activeBuses = buses.filter(b => b.status === 'Active' || b.status === 'active').length;
   const offline = buses.filter(b => b.status === 'Inactive' || b.status === 'inactive' || b.status === 'Pending (GPS)').length;
 
-  // totalStudents will come from the API; display 0 until data is loaded
-  const totalStudents = 0;
+  // totalStudents dynamically loaded from studentService / Supabase
+  const [totalStudents, setTotalStudents] = useState(0);
+
+  useEffect(() => {
+    studentService.fetchStudents().then(list => {
+      if (Array.isArray(list)) setTotalStudents(list.length);
+    }).catch(() => {});
+  }, []);
 
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
 

@@ -22,8 +22,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import { X, Navigation, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import L from 'leaflet';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bustransit-g4ks.onrender.com';
+import { authFetch } from '../lib/apiClient';
 
 // Fallback base (Vellore, Tamil Nadu)
 const BASE_LAT = 12.9165;
@@ -227,12 +226,8 @@ export default function TrackLocationView({ bus, buses = [], onClose, authToken 
     setFetchError(null);
 
     try {
-      const headers = {};
-      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-
-      const res = await fetch(
-        `${API_BASE}/api/gps/location/${encodeURIComponent(vehicleNumber)}`,
-        { headers }
+      const res = await authFetch(
+        `/api/gps/location/${encodeURIComponent(vehicleNumber)}`
       );
 
       const json = await res.json();
