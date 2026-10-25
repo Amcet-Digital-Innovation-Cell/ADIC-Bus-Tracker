@@ -35,8 +35,13 @@
         "header": [],
         "url": {
           "raw": "{{base_url}}/api/routes",
-          "host": ["{{base_url}}"],
-          "path": ["api", "routes"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
         },
         "description": "Verifies that an unauthenticated request without an Authorization header is rejected with 401 Unauthorized."
       },
@@ -73,8 +78,13 @@
         ],
         "url": {
           "raw": "{{base_url}}/api/routes",
-          "host": ["{{base_url}}"],
-          "path": ["api", "routes"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
         },
         "description": "Verifies that a tampered or fake JWT signature is rejected with 401 Unauthorized."
       },
@@ -111,8 +121,13 @@
         ],
         "url": {
           "raw": "{{base_url}}/api/routes",
-          "host": ["{{base_url}}"],
-          "path": ["api", "routes"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
         },
         "description": "Verifies that an expired JWT token is properly caught and rejected with 401 Unauthorized."
       },
@@ -149,8 +164,13 @@
         ],
         "url": {
           "raw": "{{base_url}}/api/routes",
-          "host": ["{{base_url}}"],
-          "path": ["api", "routes"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
         },
         "description": "Verifies that an authenticated request with a valid Supabase JWT returns 200 OK and JSON route data."
       },
@@ -191,8 +211,14 @@
         },
         "url": {
           "raw": "{{base_url}}/api/students/import",
-          "host": ["{{base_url}}"],
-          "path": ["api", "students", "import"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "students",
+            "import"
+          ]
         },
         "description": "Verifies that modifying student roster data without an authorization token is strictly blocked with 401 Unauthorized."
       },

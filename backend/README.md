@@ -476,5 +476,5 @@ node diagnose_supabase.js
 
 ## 5. License & Team
 
-Developed for **Adhiyamaan College of Engineering and Technology (AMCET)**.  
+Developed for **ANNAI MIRA COLLEGE OF ENGINEERING AND TECHNOLOGY (AMCET)**.  
 Maintained by the **ADIC (AMCET Digital Innovation Cell)**. All rights reserved.

@@ -689,65 +689,171 @@ router.post('/register', async (req, res) => {
         // ── Server-Side Temporary Password Generation (AM-XXXX) ───────────────
         const temporaryPassword = generateActivationKey();
 
-        // ── 2. Dynamic Mapping & Route/Bus Lookup ──────────────────────────────
-        let transitInfo = {
-            route_id: null,
-            route_name: null,
-            bus_number: null,
-            vehicle_number: null,
-            found: false
-        };
+        // ── 2. Route & Stop Resolution from bus_routes (JSON stops array) ─────
+        let targetRoute = null;
 
         if (cleanRouteName) {
-            // Query transport.bus_routes table where route_name matches case-insensitively
-            transitInfo = await resolveTransitInfo({
-                routeName: cleanRouteName,
-                stopName: cleanStopName
-            });
+            const cleanRName = cleanRouteName.replace(/[%_]/g, '\\$&');
+            let { data: rData } = await schemaDb.transport
+                .from('bus_routes')
+                .select('id, route_name, stops')
+                .ilike('route_name', cleanRName)
+                .maybeSingle();
 
-            // 4. Graceful Error Handling: Return 400 Bad Request if route_name not found
-            if (!transitInfo.found || !transitInfo.route_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Route "${cleanRouteName}" was not found in college bus records. Please select a valid route.`,
-                    message: `Route "${cleanRouteName}" was not found in college bus records. Please select a valid route.`
-                });
+            if (!rData && adminSupabase) {
+                const { data: pubR } = await adminSupabase
+                    .from('bus_routes')
+                    .select('id, route_name, stops')
+                    .ilike('route_name', cleanRName)
+                    .maybeSingle();
+                if (pubR) rData = pubR;
             }
+
+            // Fallback: search all routes for normalized or partial match
+            if (!rData) {
+                let allR = await schemaDb.transport.from('bus_routes').select('id, route_name, stops');
+                if ((!allR.data || allR.data.length === 0) && adminSupabase) {
+                    allR = await adminSupabase.from('bus_routes').select('id, route_name, stops');
+                }
+                if (allR.data && allR.data.length > 0) {
+                    const normInput = cleanRouteName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    rData = allR.data.find(r => String(r.route_name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === normInput);
+                    if (!rData) {
+                        rData = allR.data.find(r => {
+                            const rName = String(r.route_name || '').toLowerCase();
+                            const inputLower = cleanRouteName.toLowerCase();
+                            return rName.includes(inputLower) || inputLower.includes(rName);
+                        });
+                    }
+                }
+            }
+            targetRoute = rData;
         } else if (cleanRouteId) {
-            // Fallback for numeric route_id
-            transitInfo = await resolveTransitInfo({
-                routeId: cleanRouteId,
-                stopName: cleanStopName
-            });
+            let { data: rData } = await schemaDb.transport
+                .from('bus_routes')
+                .select('id, route_name, stops')
+                .eq('id', cleanRouteId)
+                .maybeSingle();
 
-            if (!transitInfo.found || !transitInfo.route_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Route with ID ${cleanRouteId} was not found in college bus records.`,
-                    message: `Route with ID ${cleanRouteId} was not found in college bus records.`
-                });
+            if (!rData && adminSupabase) {
+                const { data: pubR } = await adminSupabase
+                    .from('bus_routes')
+                    .select('id, route_name, stops')
+                    .eq('id', cleanRouteId)
+                    .maybeSingle();
+                if (pubR) rData = pubR;
             }
-        } else if (existingStudent?.route_name || existingStudent?.route_id) {
-            // Preserve pre-loaded student route if none specified
-            transitInfo = await resolveTransitInfo({
-                routeId: existingStudent.route_id,
-                routeName: existingStudent.route_name,
-                stopName: cleanStopName
-            });
-        } else {
+            targetRoute = rData;
+        } else if (existingStudent?.route_id || existingStudent?.route_name) {
+            let rQuery = schemaDb.transport.from('bus_routes').select('id, route_name, stops');
+            if (existingStudent.route_id) {
+                rQuery = rQuery.eq('id', existingStudent.route_id);
+            } else {
+                rQuery = rQuery.ilike('route_name', String(existingStudent.route_name).replace(/[%_]/g, '\\$&'));
+            }
+            const { data: rData } = await rQuery.maybeSingle();
+            targetRoute = rData;
+        }
+
+        if (!targetRoute) {
             return res.status(400).json({
                 success: false,
-                error: 'Route name is required. Please select a valid bus route.',
-                message: 'Route name is required. Please select a valid bus route.'
+                error: cleanRouteName
+                    ? `Route "${cleanRouteName}" was not found in college bus records. Please select a valid route.`
+                    : 'Route name is required. Please select a valid bus route.',
+                message: cleanRouteName
+                    ? `Route "${cleanRouteName}" was not found in college bus records. Please select a valid route.`
+                    : 'Route name is required. Please select a valid bus route.'
             });
         }
 
-        // ── 3. Store in Student Record ─────────────────────────────────────────
+        // ── 3. Parse stops JSON array & match stop_name to extract full stop_id ──
+        let stopsList = [];
+        if (Array.isArray(targetRoute.stops)) {
+            stopsList = targetRoute.stops;
+        } else if (typeof targetRoute.stops === 'string') {
+            try {
+                stopsList = JSON.parse(targetRoute.stops);
+            } catch (_) {
+                stopsList = [];
+            }
+        }
+
+        let matchedStop = null;
+        if (cleanStopName) {
+            const cleanStopLower = cleanStopName.trim().toLowerCase();
+            // Exact case-insensitive match
+            matchedStop = stopsList.find(s => {
+                const sName = String(s.stop_name || s.name || '').trim().toLowerCase();
+                return sName === cleanStopLower;
+            });
+
+            // Partial match fallback
+            if (!matchedStop) {
+                matchedStop = stopsList.find(s => {
+                    const sName = String(s.stop_name || s.name || '').trim().toLowerCase();
+                    return sName.includes(cleanStopLower) || cleanStopLower.includes(sName);
+                });
+            }
+
+            if (!matchedStop) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Stop "${cleanStopName}" does not belong to route "${targetRoute.route_name}".`,
+                    message: `Stop "${cleanStopName}" does not belong to route "${targetRoute.route_name}".`,
+                    available_stops: stopsList.map(s => s.stop_name || s.name)
+                });
+            }
+        } else if (cleanStopId) {
+            matchedStop = stopsList.find(s => String(s.id).trim() === String(cleanStopId).trim());
+            if (!matchedStop) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Stop ID "${cleanStopId}" does not exist in route "${targetRoute.route_name}".`,
+                    message: `Stop ID "${cleanStopId}" does not exist in route "${targetRoute.route_name}".`
+                });
+            }
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: 'Assigned bus stop (stop_name) is required. Please select a valid stop.',
+                message: 'Assigned bus stop (stop_name) is required. Please select a valid stop.'
+            });
+        }
+
+        // Extract the full, high-precision stop ID as a pure string (never numeric/integer parsed)
+        const resolvedStopId = matchedStop && matchedStop.id !== undefined && matchedStop.id !== null
+            ? String(matchedStop.id).trim()
+            : (cleanStopId ? String(cleanStopId).trim() : null);
+        const resolvedStopName = matchedStop
+            ? String(matchedStop.stop_name || matchedStop.name || cleanStopName).trim()
+            : cleanStopName;
+
+        // Query corresponding bus assigned to this route
+        let resolvedBusNumber = null;
+        try {
+            let { data: busData } = await schemaDb.transport
+                .from('buses')
+                .select('id, bus_number, vehicle_number')
+                .eq('route_id', targetRoute.id)
+                .maybeSingle();
+
+            if (!busData && adminSupabase) {
+                const { data: pubBus } = await adminSupabase
+                    .from('buses')
+                    .select('id, bus_number, vehicle_number')
+                    .eq('route_id', targetRoute.id)
+                    .maybeSingle();
+                if (pubBus) busData = pubBus;
+            }
+            if (busData?.bus_number) resolvedBusNumber = busData.bus_number;
+        } catch (_) {}
+
+        // ── 4. Store in Student Record ─────────────────────────────────────────
         const validCols = await getStudentColumns(db);
 
         const nowIso = new Date().toISOString();
         const resolvedName = cleanStudentName || existingStudent?.student_name || 'Student';
-        const finalRouteName = transitInfo.route_name || cleanRouteName;
 
         const rawPayload = {
             student_id: cleanStudentId,
@@ -757,14 +863,11 @@ router.post('/register', async (req, res) => {
             is_registered: true,
             registered_at: nowIso,
             updated_at: nowIso,
-            route_name: finalRouteName, // saved as plain text in the route_name column
-            route_id: transitInfo.route_id // matched ID from bus_routes
+            route_name: targetRoute.route_name,
+            route_id: targetRoute.id
         };
 
-        // bus_id (matched ID from buses)
-        if (transitInfo.bus_number) rawPayload.bus_number = transitInfo.bus_number;
-
-        // Personal and contact details
+        if (resolvedBusNumber) rawPayload.bus_number = resolvedBusNumber;
         if (cleanPhone) rawPayload.student_mobile = cleanPhone;
         if (cleanDepartment) rawPayload.department = cleanDepartment;
         if (cleanYear) rawPayload.academic_year = cleanYear;
@@ -773,13 +876,18 @@ router.post('/register', async (req, res) => {
         if (emergency_contact) rawPayload.emergency_contact = emergency_contact;
         if (pass_out_year) rawPayload.pass_out_year = parseInt(pass_out_year, 10);
 
-        // Stop details: support both stop_name and boarding_stop column names
-        if (cleanStopName) {
-            if (validCols.has('stop_name')) rawPayload.stop_name = cleanStopName;
-            if (validCols.has('boarding_stop')) rawPayload.boarding_stop = cleanStopName;
+        // Store full high-precision stop ID as string without truncation
+        if (resolvedStopId) {
+            rawPayload.stop_id = resolvedStopId;
+        }
+
+        // Store stop name into both stop_name and boarding_stop columns
+        if (resolvedStopName) {
+            if (validCols.has('stop_name')) rawPayload.stop_name = resolvedStopName;
+            if (validCols.has('boarding_stop')) rawPayload.boarding_stop = resolvedStopName;
             if (!validCols.has('stop_name') && !validCols.has('boarding_stop')) {
-                rawPayload.stop_name = cleanStopName;
-                rawPayload.boarding_stop = cleanStopName;
+                rawPayload.stop_name = resolvedStopName;
+                rawPayload.boarding_stop = resolvedStopName;
             }
         }
 
@@ -876,11 +984,12 @@ router.post('/register', async (req, res) => {
             department: savedStudent.department || '',
             academic_year: savedStudent.academic_year || '1st Year',
             year: savedStudent.academic_year || '1st Year',
-            route_id: savedStudent.route_id || transitInfo.route_id || null,
-            route_name: savedStudent.route_name || finalRouteName,
-            bus_number: savedStudent.bus_number || transitInfo.bus_number || null,
-            stop_name: cleanStopName || savedStudent.stop_name || savedStudent.boarding_stop || null,
-            boarding_stop: cleanStopName || savedStudent.boarding_stop || savedStudent.stop_name || null,
+            route_id: savedStudent.route_id || targetRoute.id,
+            route_name: savedStudent.route_name || targetRoute.route_name,
+            bus_number: savedStudent.bus_number || resolvedBusNumber || null,
+            stop_id: savedStudent.stop_id || resolvedStopId || null,
+            stop_name: resolvedStopName || savedStudent.stop_name || savedStudent.boarding_stop || null,
+            boarding_stop: resolvedStopName || savedStudent.boarding_stop || savedStudent.stop_name || null,
             is_registered: true,
             registration_status: 'Registered'
         };
@@ -1497,7 +1606,7 @@ router.get('/', optionalAuthenticate, async (req, res) => {
                     } else if (typeof r.stops === 'string') {
                         try {
                             stopsList = JSON.parse(r.stops);
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                     stopsList.forEach(st => {
                         if (st && st.id !== undefined) {
@@ -1811,7 +1920,7 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
                     routeMap.set(r.id, { ...r, stopMap });
                 });
             }
-        } catch (_) {}
+        } catch (_) { }
 
         const formattedOutput = upsertedData.map(s => formatStudentRecord(s, routeMap));
         const singleRecord = formattedOutput[0] || (studentsToInsert[0] ? formatStudentRecord(studentsToInsert[0], routeMap) : null);
@@ -1996,7 +2105,7 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
                         let stops = [];
                         if (Array.isArray(routeData.stops)) stops = routeData.stops;
                         else if (typeof routeData.stops === 'string') {
-                            try { stops = JSON.parse(routeData.stops); } catch (_) {}
+                            try { stops = JSON.parse(routeData.stops); } catch (_) { }
                         }
                         const matched = stops.find(st => String(st.id) === String(activeStopId));
                         if (matched && matched.stop_name) {
@@ -2054,7 +2163,7 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
                     let stopsList = [];
                     if (Array.isArray(r.stops)) stopsList = r.stops;
                     else if (typeof r.stops === 'string') {
-                        try { stopsList = JSON.parse(r.stops); } catch (_) {}
+                        try { stopsList = JSON.parse(r.stops); } catch (_) { }
                     }
                     stopsList.forEach(st => {
                         if (st && st.id !== undefined) {
@@ -2071,7 +2180,7 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
                     if (b.route_id) busMap.set(`route_${b.route_id}`, b);
                 });
             }
-        } catch (_) {}
+        } catch (_) { }
 
         const updatedRecord = data?.[0] ? formatStudentRecord(data[0], routeMap, busMap) : null;
 

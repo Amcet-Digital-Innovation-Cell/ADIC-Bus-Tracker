@@ -205,10 +205,10 @@ function StudentsPageContent() {
         const rList = Array.isArray(routesRes.value)
           ? routesRes.value
           : Array.isArray(routesRes.value?.routes)
-          ? routesRes.value.routes
-          : Array.isArray(routesRes.value?.data)
-          ? routesRes.value.data
-          : [];
+            ? routesRes.value.routes
+            : Array.isArray(routesRes.value?.data)
+              ? routesRes.value.data
+              : [];
         setAvailableRoutes(rList);
         apiCache.set('routes_all', rList, 120000); // 2 minutes TTL
       }
@@ -1656,10 +1656,10 @@ function StudentsPageContent() {
                       {editLoadingStops
                         ? '⏳ Loading stops from route JSON...'
                         : !editForm.route_id
-                        ? '— Select a route first to load stops —'
-                        : editRouteStops.length === 0
-                        ? '— No stops available for this route —'
-                        : '— Select Assigned Bus Stop —'}
+                          ? '— Select a route first to load stops —'
+                          : editRouteStops.length === 0
+                            ? '— No stops available for this route —'
+                            : '— Select Assigned Bus Stop —'}
                     </option>
                     {editRouteStops.map((st) => (
                       <option key={st.id} value={st.id}>
@@ -1977,10 +1977,10 @@ function StudentsPageContent() {
                         {loadingStops
                           ? '⏳ Loading stops from route JSON...'
                           : !singleForm.route_id
-                          ? '— Select a route first to load stops —'
-                          : routeStops.length === 0
-                          ? '— No stops available for this route —'
-                          : '— Select Assigned Bus Stop —'}
+                            ? '— Select a route first to load stops —'
+                            : routeStops.length === 0
+                              ? '— No stops available for this route —'
+                              : '— Select Assigned Bus Stop —'}
                       </option>
                       {routeStops.map((st) => (
                         <option key={st.id} value={st.id}>
@@ -2160,10 +2160,10 @@ function StudentsPageContent() {
                                 row.statusType === 'ready'
                                   ? 'row-ready'
                                   : row.statusType === 'dup_file'
-                                  ? 'row-dup-file'
-                                  : row.statusType === 'dup_db'
-                                  ? 'row-dup-db'
-                                  : 'row-error'
+                                    ? 'row-dup-file'
+                                    : row.statusType === 'dup_db'
+                                      ? 'row-dup-db'
+                                      : 'row-error'
                               }
                             >
                               <td>{row.line}</td>

@@ -86,15 +86,11 @@ Instead of rigid normalized tables that require multiple joins, each route in `b
     "id": 1792417045014,
     "stop_name": "SANKARANPALAYAM",
     "stop_order": 1,
-    "pickup_time": "07:15 AM",
-    "drop_time": "05:45 PM"
   },
   {
     "id": 1792417045015,
     "stop_name": "BAGALUR HUDCO",
     "stop_order": 2,
-    "pickup_time": "07:25 AM",
-    "drop_time": "05:35 PM"
   }
 ]
 ```
@@ -476,5 +472,5 @@ node diagnose_supabase.js
 
 ## 5. License & Team
 
-Developed for **Adhiyamaan College of Engineering and Technology (AMCET)**.  
+Developed for **ANNAI MIRA COLLEGE OF ENGINEERING AND TECHNOLOGY (AMCET)**.  
 Maintained by the **ADIC (AMCET Digital Innovation Cell)**. All rights reserved.
