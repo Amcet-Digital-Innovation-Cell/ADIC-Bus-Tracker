@@ -9,6 +9,8 @@ const express = require("express");
 const router = express.Router();
 const routeController = require("../controllers/route.controller");
 
+const { authenticate } = require("../middleware/auth.middleware");
+
 // GET /api/routes — load list of routes
 router.get("/", routeController.getAllRoutes);
 
@@ -19,12 +21,12 @@ router.get("/:route_id/stops", routeController.getRouteStops);
 router.get("/:id", routeController.getRouteById);
 
 // POST /api/routes — create a new route
-router.post("/", routeController.createRoute);
+router.post("/", authenticate, routeController.createRoute);
 
 // PUT /api/routes/:id — update an existing route
-router.put("/:id", routeController.updateRoute);
+router.put("/:id", authenticate, routeController.updateRoute);
 
 // DELETE /api/routes/:id — delete a route
-router.delete("/:id", routeController.deleteRoute);
+router.delete("/:id", authenticate, routeController.deleteRoute);
 
 module.exports = router;

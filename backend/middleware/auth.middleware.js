@@ -74,3 +74,17 @@ exports.authenticate = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * optionalAuthenticate - Permissive in non-production, validates JWT if provided
+ */
+exports.optionalAuthenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (process.env.NODE_ENV === "production") {
+      return exports.authenticate(req, res, next);
+    }
+    return next();
+  }
+  return exports.authenticate(req, res, next);
+};

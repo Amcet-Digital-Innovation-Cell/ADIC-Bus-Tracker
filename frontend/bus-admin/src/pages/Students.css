@@ -332,6 +332,35 @@
   flex-direction: column;
   overflow: hidden;
   flex: 1;
+  position: relative;
+}
+
+/* Real-time background sync progress indicator */
+.table-sync-bar {
+  height: 3px;
+  width: 100%;
+  background: rgba(52, 152, 219, 0.12);
+  overflow: hidden;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+}
+
+.table-sync-bar__indeterminate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #3498db, #60a5fa, #3498db);
+  animation: tableSyncSlide 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  width: 35%;
+  border-radius: 2px;
+}
+
+@keyframes tableSyncSlide {
+  0% { left: -35%; }
+  100% { left: 100%; }
 }
 
 .table-responsive {

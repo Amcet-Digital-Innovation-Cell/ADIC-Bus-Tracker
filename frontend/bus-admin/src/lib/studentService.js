@@ -181,7 +181,10 @@ export const studentService = {
     parent_name,
     parent_phone,
     route_id,
+    route_name,
     stop_id,
+    stop_name,
+    boarding_stop,
   }) => {
     const cleanId = String(student_id || '').trim();
     const cleanName = String(student_name || name || '').trim();
@@ -194,6 +197,7 @@ export const studentService = {
 
     const emailValue = (student_email || email) ? String(student_email || email).trim().toLowerCase() : null;
     const phoneValue = (student_mobile || phone) ? String(student_mobile || phone).trim() : null;
+    const cleanStopName = (stop_name || boarding_stop) ? String(stop_name || boarding_stop).trim() : null;
 
     const payload = {
       student_id: cleanId,
@@ -207,7 +211,10 @@ export const studentService = {
       parent_name: parent_name ? String(parent_name).trim() : null,
       parent_phone: parent_phone ? String(parent_phone).trim() : null,
       route_id: (route_id !== undefined && route_id !== null && route_id !== '') ? parseInt(route_id, 10) : null,
+      route_name: route_name ? String(route_name).trim() : null,
       stop_id: (stop_id !== undefined && stop_id !== null && stop_id !== '') ? String(stop_id).trim() : null,
+      stop_name: cleanStopName,
+      boarding_stop: cleanStopName,
     };
 
     try {

@@ -1767,6 +1767,36 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
         const db = getStudentDb();
         const validCols = await getStudentColumns(db);
 
+        // Pre-fetch route & stop metadata so route_name and stop_name are reliably stored directly in the database row
+        const routeNameMap = new Map();
+        const routeStopsMap = new Map();
+        try {
+            const { data: dbRoutes } = await schemaDb.transport.from('bus_routes').select('id, route_name, stops');
+            if (dbRoutes) {
+                dbRoutes.forEach(r => {
+                    if (r.id) {
+                        if (r.route_name) {
+                            routeNameMap.set(r.id, r.route_name);
+                            routeNameMap.set(String(r.id), r.route_name);
+                        }
+                        let stopsList = [];
+                        if (Array.isArray(r.stops)) stopsList = r.stops;
+                        else if (typeof r.stops === 'string') {
+                            try { stopsList = JSON.parse(r.stops); } catch (_) {}
+                        }
+                        const stMap = new Map();
+                        stopsList.forEach(st => {
+                            if (st && st.id !== undefined) {
+                                stMap.set(String(st.id), st.stop_name || st.name || '');
+                            }
+                        });
+                        routeStopsMap.set(r.id, stMap);
+                        routeStopsMap.set(String(r.id), stMap);
+                    }
+                });
+            }
+        } catch (_) {}
+
         // Format and prepare data matching valid database columns
         const formattedStudents = rawStudents.map(s => {
             const rawId = s.student_id || s.register_no || s.id;
@@ -1788,9 +1818,16 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
             const routeId = (s.route_id !== undefined && s.route_id !== null && String(s.route_id).trim() !== '')
                 ? parseInt(s.route_id, 10)
                 : null;
+            const explicitRouteName = s.route_name && String(s.route_name).trim() ? String(s.route_name).trim() : null;
+            const resolvedRouteName = explicitRouteName || (routeId ? (routeNameMap.get(routeId) || null) : null);
             const stopId = (s.stop_id !== undefined && s.stop_id !== null && String(s.stop_id).trim() !== '')
                 ? String(s.stop_id).trim()
                 : null;
+            const explicitStopName = (s.stop_name || s.boarding_stop) && String(s.stop_name || s.boarding_stop).trim()
+                ? String(s.stop_name || s.boarding_stop).trim()
+                : null;
+            const stopMapForRoute = routeId ? (routeStopsMap.get(routeId) || routeStopsMap.get(String(routeId))) : null;
+            const resolvedStopName = explicitStopName || (stopMapForRoute && stopId ? (stopMapForRoute.get(String(stopId)) || null) : null);
 
             const isRegistered = Boolean(rawEmail && rawEmail.includes('@'));
 
@@ -1807,7 +1844,9 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
                 parent_name: parentName,
                 parent_phone: parentPhone,
                 route_id: routeId,
+                route_name: resolvedRouteName,
                 stop_id: stopId,
+                stop_name: resolvedStopName,
                 is_registered: isRegistered,
                 activation_key: s.activation_key || Math.random().toString(36).substring(2, 10),
                 updated_at: new Date().toISOString()
@@ -1818,8 +1857,6 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
             }
             if (s.emergency_contact) student.emergency_contact = s.emergency_contact;
             if (s.bus_number || s.bus_no) student.bus_number = String(s.bus_number || s.bus_no).trim();
-            if (s.boarding_stop || s.stop_name) student.boarding_stop = s.boarding_stop || s.stop_name;
-            if (s.stop_name) student.stop_name = s.stop_name;
 
             // Filter to only valid database columns so PostgREST never errors on unknown columns
             return filterValidStudentColumns(student, validCols);
@@ -2084,15 +2121,37 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
             if (transit.route_id) {
                 updates.route_id = transit.route_id;
             }
+            if (transit.route_name) {
+                updates.route_name = transit.route_name;
+            }
             if (transit.bus_number) {
                 updates.bus_number = transit.bus_number;
+            }
+
+            // Ensure route_name is stored directly when route_id is updated
+            if (updates.route_id && !updates.route_name) {
+                try {
+                    const { data: rRow } = await schemaDb.transport
+                        .from('bus_routes')
+                        .select('route_name')
+                        .eq('id', updates.route_id)
+                        .maybeSingle();
+                    if (rRow?.route_name) updates.route_name = rRow.route_name;
+                } catch (_) {}
+            } else if (updates.route_id === null) {
+                updates.route_name = null;
+                updates.bus_number = null;
             }
 
             // If route and stop_id are present, resolve stop_name from bus_routes stops JSON
             const activeRouteId = updates.route_id !== undefined ? updates.route_id : currentStudent.route_id;
             const activeStopId = updates.stop_id !== undefined ? updates.stop_id : currentStudent.stop_id;
 
-            if (activeRouteId && activeStopId) {
+            if (updates.stop_id === null || updates.stop_id === '') {
+                updates.stop_id = null;
+                updates.stop_name = null;
+                updates.boarding_stop = null;
+            } else if (activeRouteId && activeStopId) {
                 try {
                     const { data: routeData } = await schemaDb.transport
                         .from('bus_routes')
@@ -2101,13 +2160,14 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
                         .maybeSingle();
 
                     if (routeData) {
-                        updates.route_name = routeData.route_name;
+                        if (!updates.route_name) updates.route_name = routeData.route_name;
                         let stops = [];
                         if (Array.isArray(routeData.stops)) stops = routeData.stops;
                         else if (typeof routeData.stops === 'string') {
                             try { stops = JSON.parse(routeData.stops); } catch (_) { }
                         }
-                        const matched = stops.find(st => String(st.id) === String(activeStopId));
+                        const cleanActiveStopId = String(activeStopId).trim();
+                        const matched = stops.find(st => String(st.id) === cleanActiveStopId);
                         if (matched && matched.stop_name) {
                             updates.stop_name = matched.stop_name;
                             updates.boarding_stop = matched.stop_name;
@@ -2116,6 +2176,9 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
                 } catch (rErr) {
                     console.warn('[Student Update] Could not resolve stop name from route:', rErr.message);
                 }
+            } else if (updates.stop_name && !updates.stop_id) {
+                updates.stop_name = String(updates.stop_name).trim();
+                updates.boarding_stop = updates.stop_name;
             }
         }
 
