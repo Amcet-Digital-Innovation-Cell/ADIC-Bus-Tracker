@@ -12,6 +12,9 @@ const routeController = require("../controllers/route.controller");
 // GET /api/routes — load list of routes
 router.get("/", routeController.getAllRoutes);
 
+// GET /api/routes/:route_id/stops — get stops JSON array for a specific route
+router.get("/:route_id/stops", routeController.getRouteStops);
+
 // GET /api/routes/:id — get a single route with stops
 router.get("/:id", routeController.getRouteById);
 

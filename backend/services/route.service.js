@@ -232,3 +232,37 @@ exports.deleteRoute = async (id) => {
         throw error;
     }
 };
+
+/**
+ * getStopsByRouteId
+ * Extracts and returns the normalized stops JSON array from bus_routes for a specific route.
+ *
+ * @param {string|number} routeId
+ * @returns {Promise<Array>}
+ */
+exports.getStopsByRouteId = async (routeId) => {
+    if (!routeId) {
+        const err = new Error("Route ID is required");
+        err.status = 400;
+        throw err;
+    }
+
+    const { data, error } = await writeClient()
+        .from("bus_routes")
+        .select("id, route_name, stops")
+        .eq("id", routeId)
+        .maybeSingle();
+
+    if (error) {
+        console.error("[getStopsByRouteId] Supabase error:", error.message);
+        throw error;
+    }
+
+    if (!data) {
+        const err = new Error(`Route with ID ${routeId} not found`);
+        err.status = 404;
+        throw err;
+    }
+
+    return normalizeStops(data.stops);
+};

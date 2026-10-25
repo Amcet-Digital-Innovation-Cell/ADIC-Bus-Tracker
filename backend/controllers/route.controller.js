@@ -35,6 +35,20 @@ exports.getRouteById = async (req, res, next) => {
 };
 
 /**
+ * GET /api/routes/:route_id/stops
+ * Returns stops JSON array from bus_tracking.bus_routes for that specific route.
+ */
+exports.getRouteStops = async (req, res, next) => {
+    try {
+        const routeId = req.params.route_id || req.params.id;
+        const stops = await routeService.getStopsByRouteId(routeId);
+        return success(res, stops, "Route stops retrieved successfully");
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
  * POST /api/routes
  * Creates a new route record with stops.
  */

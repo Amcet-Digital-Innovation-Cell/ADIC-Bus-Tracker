@@ -28,9 +28,10 @@ export const AUTH_EXPIRED_EVENT = 'amcet:auth:expired';
  */
 export async function getValidToken() {
   try {
-    // 1. Strictly inspect active Supabase session
+    // 1. Check active Supabase session
     if (supabase?.auth?.getSession) {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
+      const session = data?.session;
 
       if (!error && session?.access_token) {
         // Check if token expires within 60 seconds
@@ -41,14 +42,16 @@ export async function getValidToken() {
           console.log('[apiClient] Access token near expiry or expired, refreshing session...');
           const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
           if (!refreshErr && refreshData?.session?.access_token) {
-            return refreshData.session.access_token;
-          }
-          if (refreshErr) {
-            console.warn('[apiClient] Session refresh failed:', refreshErr.message);
-            return null;
+            const freshToken = refreshData.session.access_token;
+            localStorage.setItem('authToken', freshToken);
+            sessionStorage.setItem('authToken', freshToken);
+            return freshToken;
           }
         }
 
+        // Cache active token in both storage locations
+        localStorage.setItem('authToken', session.access_token);
+        sessionStorage.setItem('authToken', session.access_token);
         return session.access_token;
       }
     }
@@ -56,7 +59,32 @@ export async function getValidToken() {
     console.warn('[apiClient] Error inspecting Supabase session:', err.message);
   }
 
-  // Strictly return null if no valid Supabase session exists (no manual storage fallback)
+  // 2. Direct fallback: Check localStorage and sessionStorage keys
+  const directToken = 
+    localStorage.getItem('authToken') ||
+    sessionStorage.getItem('authToken') ||
+    localStorage.getItem('token') ||
+    sessionStorage.getItem('token') ||
+    localStorage.getItem('access_token');
+
+  if (directToken && directToken.trim() !== '' && directToken !== 'null' && directToken !== 'undefined') {
+    return directToken.trim();
+  }
+
+  // 3. Fallback: Parse Supabase internal localStorage session keys (e.g. sb-<project>-auth-token)
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
+        const item = JSON.parse(localStorage.getItem(key) || '{}');
+        if (item?.access_token) {
+          localStorage.setItem('authToken', item.access_token);
+          return item.access_token;
+        }
+      }
+    }
+  } catch (_) {}
+
   return null;
 }
 

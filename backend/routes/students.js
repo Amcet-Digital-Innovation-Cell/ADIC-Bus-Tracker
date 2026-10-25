@@ -66,10 +66,10 @@ async function getStudentColumns(db) {
     }
     // Baseline columns verified in students.students
     return new Set([
-        'id', 'student_id', 'student_name', 'email', 'department',
-        'department_code', 'academic_year', 'pass_out_year', 'student_mobile',
+        'id', 'student_id', 'student_name', 'email', 'student_email', 'department',
+        'department_code', 'academic_year', 'year', 'pass_out_year', 'student_mobile',
         'parent_name', 'parent_phone', 'emergency_contact', 'activation_key',
-        'bus_number', 'route_id', 'route_name',
+        'bus_number', 'route_id', 'stop_id', 'route_name',
         'boarding_stop', 'stop_name', 'drop_stop', 'pass_status',
         'pass_expiry_date', 'is_registered', 'registered_at', 'last_login_at',
         'created_at', 'updated_at'
@@ -374,7 +374,18 @@ function formatStudentRecord(student, routeMap, busMap) {
 
     const routeName = student.route_name || routeInfo?.route_name || busInfo?.route_name || null;
     const busNumber = busNumberVal || busInfo?.bus_number || null;
-    const stopName = student.stop_name || student.boarding_stop || null;
+
+    // Match stop_name using stop_id from route's stops JSON if available
+    let matchedStopName = null;
+    const stopIdVal = student.stop_id !== undefined && student.stop_id !== null && student.stop_id !== ''
+        ? String(student.stop_id).trim()
+        : null;
+
+    if (stopIdVal && routeInfo?.stopMap) {
+        matchedStopName = routeInfo.stopMap.get(String(stopIdVal)) || null;
+    }
+
+    const stopName = matchedStopName || student.stop_name || student.boarding_stop || null;
 
     // Normalizing academic year so "1.0" or "3.0" becomes "1st Year", "3rd Year" for dashboard UI
     const displayYear = (function (y) {
@@ -399,12 +410,13 @@ function formatStudentRecord(student, routeMap, busMap) {
         department: student.department || '',
         route_id: routeId,
         route_name: routeName,
+        stop_id: stopIdVal,
         bus_number: busNumber,
         stop_name: stopName,
         boarding_stop: stopName,
         parent_name: student.parent_name || '',
-        parent_phone: student.parent_phone || '',
-        email: student.email || '',
+        email: student.email || student.student_email || '',
+        student_email: student.student_email || student.email || '',
         emergency_contact: student.emergency_contact || student.parent_phone || '',
         is_registered: isRegistered,
         registration_status: isRegistered ? 'Registered' : 'Not Registered',
@@ -1473,11 +1485,27 @@ router.get('/', optionalAuthenticate, async (req, res) => {
         let busMap = new Map();
         try {
             const [routesRes, busesRes] = await Promise.all([
-                schemaDb.transport.from('bus_routes').select('id, route_name'),
+                schemaDb.transport.from('bus_routes').select('id, route_name, stops'),
                 schemaDb.transport.from('buses').select('id, bus_number, vehicle_number, route_id, route_name')
             ]);
             if (routesRes.data) {
-                routesRes.data.forEach(r => routeMap.set(r.id, r));
+                routesRes.data.forEach(r => {
+                    const stopMap = new Map();
+                    let stopsList = [];
+                    if (Array.isArray(r.stops)) {
+                        stopsList = r.stops;
+                    } else if (typeof r.stops === 'string') {
+                        try {
+                            stopsList = JSON.parse(r.stops);
+                        } catch (_) {}
+                    }
+                    stopsList.forEach(st => {
+                        if (st && st.id !== undefined) {
+                            stopMap.set(String(st.id), st.stop_name || st.name || '');
+                        }
+                    });
+                    routeMap.set(r.id, { ...r, stopMap });
+                });
             }
             if (busesRes.data) {
                 busesRes.data.forEach(b => {
@@ -1500,13 +1528,27 @@ router.get('/', optionalAuthenticate, async (req, res) => {
             const to = from + CHUNK_SIZE - 1;
             // Order by is_registered DESC first so registered students appear immediately at top,
             // then by updated_at DESC and created_at DESC
+            // Query students_with_stops_view (PostgreSQL JOIN & LATERAL stop mapping)
             let { data, error } = await db
-                .from('students')
+                .from('students_with_stops_view')
                 .select('*')
                 .order('is_registered', { ascending: false })
                 .order('updated_at', { ascending: false, nullsFirst: false })
                 .order('created_at', { ascending: false })
                 .range(from, to);
+
+            // Fallback to students table if the view is not yet created in the schema
+            if (error || !data) {
+                const stdQuery = await db
+                    .from('students')
+                    .select('*')
+                    .order('is_registered', { ascending: false })
+                    .order('updated_at', { ascending: false, nullsFirst: false })
+                    .order('created_at', { ascending: false })
+                    .range(from, to);
+                data = stdQuery.data;
+                error = stdQuery.error;
+            }
 
             // Fallback if initial students query returned empty or error
             if ((error || !data || data.length === 0) && from === 0) {
@@ -1578,6 +1620,41 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
             });
         }
 
+        const isSingle = !req.body.students && !Array.isArray(req.body);
+
+        // ── Strict Validation for Mandatory Fields ───────────────────
+        if (isSingle) {
+            const raw = rawStudents[0] || {};
+            const rawId = String(raw.student_id || raw.register_no || '').trim();
+            const rawName = String(raw.student_name || raw.name || raw.full_name || '').trim();
+            const rawYear = String(raw.academic_year || raw.year || '').trim();
+
+            if (!rawId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Student ID is required.',
+                    message: 'Student ID is required.',
+                    field: 'student_id'
+                });
+            }
+            if (!rawName) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Student Full Name is required.',
+                    message: 'Student Full Name is required.',
+                    field: 'student_name'
+                });
+            }
+            if (!rawYear) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Academic Year is required.',
+                    message: 'Academic Year is required.',
+                    field: 'academic_year'
+                });
+            }
+        }
+
         const db = getStudentDb();
         const validCols = await getStudentColumns(db);
 
@@ -1586,31 +1663,58 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
             const rawId = s.student_id || s.register_no || s.id;
             const studentId = rawId ? String(rawId).trim().toUpperCase() : `STD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
             const studentName = String(s.student_name || s.name || s.full_name || '').trim();
+            const rawYear = s.academic_year || s.year || '1st Year';
+            const cleanYear = String(rawYear).trim();
+
+            // Optional fields: cleanly set to null if blank or not provided
+            const dept = s.department && String(s.department).trim() ? String(s.department).trim() : null;
+            const mobile = (s.student_mobile || s.phone || s.mobile) && String(s.student_mobile || s.phone || s.mobile).trim()
+                ? String(s.student_mobile || s.phone || s.mobile).trim()
+                : null;
+            const rawEmail = (s.student_email || s.email) && String(s.student_email || s.email).trim()
+                ? String(s.student_email || s.email).trim().toLowerCase()
+                : null;
+            const parentName = s.parent_name && String(s.parent_name).trim() ? String(s.parent_name).trim() : null;
+            const parentPhone = s.parent_phone && String(s.parent_phone).trim() ? String(s.parent_phone).trim() : null;
+            const routeId = (s.route_id !== undefined && s.route_id !== null && String(s.route_id).trim() !== '')
+                ? parseInt(s.route_id, 10)
+                : null;
+            const stopId = (s.stop_id !== undefined && s.stop_id !== null && String(s.stop_id).trim() !== '')
+                ? String(s.stop_id).trim()
+                : null;
+
+            const isRegistered = Boolean(rawEmail && rawEmail.includes('@'));
 
             const student = {
                 student_id: studentId,
                 student_name: studentName,
-                department: s.department || '',
-                academic_year: s.academic_year || s.year || '1st Year',
+                department: dept,
+                academic_year: cleanYear,
+                year: cleanYear,
                 pass_out_year: parseInt(s.pass_out_year || s.passout_year || s.pass_year, 10) || 2030,
-                student_mobile: s.student_mobile || s.phone || '',
-                email: s.email || '',
-                parent_name: s.parent_name || null,
-                parent_phone: s.parent_phone || null,
+                student_mobile: mobile,
+                email: rawEmail,
+                student_email: rawEmail,
+                parent_name: parentName,
+                parent_phone: parentPhone,
+                route_id: routeId,
+                stop_id: stopId,
+                is_registered: isRegistered,
                 activation_key: s.activation_key || Math.random().toString(36).substring(2, 10),
                 updated_at: new Date().toISOString()
             };
 
-            // Optional profile and transit assignments
+            if (isRegistered) {
+                student.registered_at = new Date().toISOString();
+            }
             if (s.emergency_contact) student.emergency_contact = s.emergency_contact;
-            if (s.route_id) student.route_id = parseInt(s.route_id, 10);
             if (s.bus_number || s.bus_no) student.bus_number = String(s.bus_number || s.bus_no).trim();
+            if (s.boarding_stop || s.stop_name) student.boarding_stop = s.boarding_stop || s.stop_name;
+            if (s.stop_name) student.stop_name = s.stop_name;
 
             // Filter to only valid database columns so PostgREST never errors on unknown columns
             return filterValidStudentColumns(student, validCols);
         });
-
-        const isSingle = !req.body.students && !Array.isArray(req.body);
 
         // ── Single Student Insert Protection ──────────────────────────
         if (isSingle) {
@@ -1690,8 +1794,27 @@ router.post(['/import', '/bulk', '/'], authenticate, async (req, res) => {
             }
         }
 
-        const formattedOutput = upsertedData.map(formatStudentRecord);
-        const singleRecord = formattedOutput[0] || (studentsToInsert[0] ? formatStudentRecord(studentsToInsert[0]) : null);
+        let routeMap = new Map();
+        try {
+            const { data: rData } = await schemaDb.transport
+                .from('bus_routes')
+                .select('id, route_name, stops');
+            if (rData) {
+                rData.forEach(r => {
+                    const stopMap = new Map();
+                    const stopsList = Array.isArray(r.stops) ? r.stops : [];
+                    stopsList.forEach(st => {
+                        if (st && st.id !== undefined) {
+                            stopMap.set(String(st.id), st.stop_name || st.name || '');
+                        }
+                    });
+                    routeMap.set(r.id, { ...r, stopMap });
+                });
+            }
+        } catch (_) {}
+
+        const formattedOutput = upsertedData.map(s => formatStudentRecord(s, routeMap));
+        const singleRecord = formattedOutput[0] || (studentsToInsert[0] ? formatStudentRecord(studentsToInsert[0], routeMap) : null);
         const totalSkipped = existingDuplicates.length + inBatchDuplicates.length;
 
         return res.status(200).json({
@@ -1834,11 +1957,18 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
             updates.email = cleanEmail;
         }
 
-        // 4. Resolve Route & Bus info if route_name or route_id was provided
-        if (updates.route_name !== undefined || updates.route_id !== undefined) {
+        // 4. Resolve Route & Bus info if route_name, route_id, or stop_id was provided
+        if (updates.route_name !== undefined || updates.route_id !== undefined || updates.stop_id !== undefined) {
+            if (updates.route_id !== undefined) {
+                updates.route_id = updates.route_id ? parseInt(updates.route_id, 10) : null;
+            }
+            if (updates.stop_id !== undefined) {
+                updates.stop_id = updates.stop_id !== '' && updates.stop_id !== null ? String(updates.stop_id).trim() : null;
+            }
+
             const transit = await resolveTransitInfo({
                 routeName: updates.route_name,
-                routeId: updates.route_id,
+                routeId: updates.route_id !== undefined ? updates.route_id : currentStudent.route_id,
                 stopName: updates.stop_name || updates.boarding_stop || currentStudent.boarding_stop
             });
 
@@ -1847,6 +1977,36 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
             }
             if (transit.bus_number) {
                 updates.bus_number = transit.bus_number;
+            }
+
+            // If route and stop_id are present, resolve stop_name from bus_routes stops JSON
+            const activeRouteId = updates.route_id !== undefined ? updates.route_id : currentStudent.route_id;
+            const activeStopId = updates.stop_id !== undefined ? updates.stop_id : currentStudent.stop_id;
+
+            if (activeRouteId && activeStopId) {
+                try {
+                    const { data: routeData } = await schemaDb.transport
+                        .from('bus_routes')
+                        .select('id, route_name, stops')
+                        .eq('id', activeRouteId)
+                        .maybeSingle();
+
+                    if (routeData) {
+                        updates.route_name = routeData.route_name;
+                        let stops = [];
+                        if (Array.isArray(routeData.stops)) stops = routeData.stops;
+                        else if (typeof routeData.stops === 'string') {
+                            try { stops = JSON.parse(routeData.stops); } catch (_) {}
+                        }
+                        const matched = stops.find(st => String(st.id) === String(activeStopId));
+                        if (matched && matched.stop_name) {
+                            updates.stop_name = matched.stop_name;
+                            updates.boarding_stop = matched.stop_name;
+                        }
+                    }
+                } catch (rErr) {
+                    console.warn('[Student Update] Could not resolve stop name from route:', rErr.message);
+                }
             }
         }
 
@@ -1885,10 +2045,25 @@ router.put('/:id', optionalAuthenticate, async (req, res) => {
         let busMap = new Map();
         try {
             const [routesRes, busesRes] = await Promise.all([
-                schemaDb.transport.from('bus_routes').select('id, route_name'),
+                schemaDb.transport.from('bus_routes').select('id, route_name, stops'),
                 schemaDb.transport.from('buses').select('id, bus_number, vehicle_number, route_id, route_name')
             ]);
-            if (routesRes.data) routesRes.data.forEach(r => routeMap.set(r.id, r));
+            if (routesRes.data) {
+                routesRes.data.forEach(r => {
+                    const stopMap = new Map();
+                    let stopsList = [];
+                    if (Array.isArray(r.stops)) stopsList = r.stops;
+                    else if (typeof r.stops === 'string') {
+                        try { stopsList = JSON.parse(r.stops); } catch (_) {}
+                    }
+                    stopsList.forEach(st => {
+                        if (st && st.id !== undefined) {
+                            stopMap.set(String(st.id), st.stop_name || st.name || '');
+                        }
+                    });
+                    routeMap.set(r.id, { ...r, stopMap });
+                });
+            }
             if (busesRes.data) {
                 busesRes.data.forEach(b => {
                     busMap.set(b.id, b);
