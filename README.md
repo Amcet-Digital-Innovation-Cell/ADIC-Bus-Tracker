@@ -727,4 +727,4 @@ Runs Jest and Supertest suites covering JWT authentication, permissive developme
 ## 7. Maintainers & License
 
 Developed for **Annai Mira College of Engineering and Technology (AMCET)**.  
-Maintained by the **ADIC (AMCET Digital Innovation Cell)**. All rights reserved.
+Maintained by the **ADIC (AMCET Digital Innovation Cell)**.
