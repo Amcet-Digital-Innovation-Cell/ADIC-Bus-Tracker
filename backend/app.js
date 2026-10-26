@@ -26,7 +26,7 @@ const cors = require("cors");
 
 const config = require("./config/env");
 
-const { authenticate } = require("./middleware/auth.middleware");
+const { authenticate, optionalAuthenticate } = require("./middleware/auth.middleware");
 const { errorHandler } = require("./middleware/error.middleware");
 const { logger } = require("./middleware/logger.middleware");
 
@@ -105,7 +105,7 @@ app.use("/api/dashboard", authenticate, dashboardRoutes);
 app.use("/api/buses", authenticate, busRoutes);
 
 // Routes list dropdown metadata
-app.use("/api/routes", authenticate, routeRoutes);
+app.use("/api/routes", optionalAuthenticate, routeRoutes);
 
 // GPS sync (manual trigger) and scheduler status
 app.use("/api/gps", authenticate, gpsRoutes);

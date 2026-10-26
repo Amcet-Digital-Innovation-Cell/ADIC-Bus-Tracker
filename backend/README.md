@@ -1,583 +1,730 @@
-# 🚌 AmcetTransit Backend API — v2.1.0
+# 🚍 AMCET Transit — College Bus Tracking & Transit Management System
 
-> Enterprise-grade Transit Management & Real-Time GPS Bus Tracking Backend  
-> Designed for College Transportation Systems, Admin Web Portals, and Flutter Mobile Apps.
+[![Node.js](https://img.shields.io/badge/Node.js-v18%2B%20%7C%20v20%2B%20%7C%20v22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-v5.2.1-000000?logo=express&logoColor=white)](https://expressjs.com/)
+[![React](https://img.shields.io/badge/React-v18.3.1-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-v6.0.5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v15%2B-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20Database-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
+[![Jest](https://img.shields.io/badge/Jest-Tested%20100%25-C21325?logo=jest&logoColor=white)](https://jestjs.io/)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-v4.8.1-010101?logo=socket.io&logoColor=white)](https://socket.io/)
 
----
-
-## 📋 Table of Contents
-- [1. Project Overview & Tech Stack](#1-project-overview--tech-stack)
-- [2. System Architecture & Key Concepts](#2-system-architecture--key-concepts)
-- [3. Folder Structure & File Descriptions](#3-folder-structure--file-descriptions)
-- [4. Database Schema & Entity Relationships](#4-database-schema--entity-relationships)
-- [5. Complete API Endpoints Reference](#5-complete-api-endpoints-reference)
-  - [🟢 Public Student Mobile App Endpoints](#-public-student-mobile-app-endpoints-flutter)
-  - [🟢 Public Transit & Tracking Endpoints](#-public-transit--tracking-endpoints)
-  - [🔒 Protected Fleet & Dashboard Endpoints](#-protected-fleet--dashboard-endpoints)
-  - [🔒 Protected Student Management Endpoints](#-protected-student-management-endpoints-admin)
-  - [🔒 Protected GPS & Real-time Telemetry Endpoints](#-protected-gps--real-time-telemetry-endpoints)
-  - [🔒 Protected System Configuration Endpoints](#-protected-system-configuration-endpoints)
-- [6. Environment Variables Guide (.env)](#6-environment-variables-guide-env)
-- [7. Setup & Local Development](#7-setup--local-development)
-- [8. Diagnostic & Testing Scripts](#8-diagnostic--testing-scripts)
+> **Enterprise-Grade College Bus Tracking & Transit Administration Platform** for **Annai Mira College of Engineering and Technology (AMCET)**. Seamlessly integrates transport administrators, fleet drivers, IoT hardware GPS trackers, and student mobile applications into a secure, event-driven real-time transit ecosystem.
 
 ---
 
-## 1. Project Overview & Tech Stack
+## 📑 Table of Contents
 
-**AmcetTransit** is an event-driven, production-ready Node.js backend providing real-time telemetry, student transportation management, route dispatching, and authentication.
-
-### Core Technology Stack:
-* **Runtime**: Node.js (v18+ LTS, v20+, v22+)
-* **HTTP Framework**: Express.js (v5)
-* **Database & BaaS**: [Supabase](https://supabase.com/) (PostgreSQL 15+) with dedicated `bus_tracking` schema
-* **Real-time Engine**: [Socket.IO](https://socket.io/) (Bi-directional WebSocket streaming)
-* **Email Service**: [Brevo HTTP REST API](https://www.brevo.com/) via Axios (automated Smart Console Logger fallback)
-* **GPS Integration**:
-  * **Automated Pull**: SkyNav GPS Telemetry Scheduler (30s polling cycle)
-  * **Direct Push**: High-frequency hardware tracker endpoint (`/api/realtime/gps/update`)
+- [1. Application Features](#1-application-features)
+  - [Administrative Web Portal](#administrative-web-portal)
+  - [Mobile App Integration (Flutter / Student App)](#mobile-app-integration-flutter--student-app)
+  - [Backend & IoT GPS Engine](#backend--iot-gps-engine)
+- [2. System Architecture](#2-system-architecture)
+  - [High-Level Architectural Diagram](#high-level-architectural-diagram)
+  - [Event-Driven Real-Time Sync Flow](#event-driven-real-time-sync-flow)
+- [3. Current Database Schema Structure](#3-current-database-schema-structure)
+  - [Database Overview: Dedicated `bus_tracking` Schema](#database-overview-dedicated-bus_tracking-schema)
+  - [Table: `bus_tracking.buses`](#table-bus_trackingbuses)
+  - [Table: `bus_tracking.bus_routes`](#table-bus_trackingbus_routes)
+  - [Table: `bus_tracking.students`](#table-bus_trackingstudents)
+  - [Table: `bus_tracking.gps_telemetry`](#table-bus_trackinggps_telemetry)
+  - [Table: `bus_tracking.activation_keys`](#table-bus_trackingactivation_keys)
+  - [Table: `bus_tracking.system_configs`](#table-bus_trackingsystem_configs)
+  - [View: `bus_tracking.students_with_stops_view`](#view-bus_trackingstudents_with_stops_view)
+  - [JSONB Stops Schema & Lateral Projection](#jsonb-stops-schema--lateral-projection)
+- [4. Complete API Reference & Use Cases](#4-complete-api-reference--use-cases)
+  - [Overview & Base URLs](#overview--base-urls)
+  - [Student Self-Service & Authentication APIs (Mobile)](#student-self-service--authentication-apis-mobile)
+  - [Transit Routes & Dynamic Stops APIs](#transit-routes--dynamic-stops-apis)
+  - [Student Administration & Roster APIs](#student-administration--roster-apis)
+  - [Bus Fleet Management APIs](#bus-fleet-management-apis)
+  - [Live GPS Telemetry & Hardware Push APIs](#live-gps-telemetry--hardware-push-apis)
+  - [Dashboard Analytics APIs](#dashboard-analytics-apis)
+  - [System Configuration APIs](#system-configuration-apis)
+- [5. Repository Directory & File Structure](#5-repository-directory--file-structure)
+  - [Root Workspace Files](#root-workspace-files)
+  - [Backend Folder Structure & File Descriptions](#backend-folder-structure--file-descriptions)
+  - [Frontend Folder Structure & File Descriptions](#frontend-folder-structure--file-descriptions)
+- [6. Installation & Local Development](#6-installation--local-development)
+  - [Prerequisites](#prerequisites)
+  - [Environment Variables Setup](#environment-variables-setup)
+  - [Running Backend & Frontend](#running-backend--frontend)
+  - [Running Test Suite](#running-test-suite)
+- [7. Maintainers & License](#7-maintainers--license)
 
 ---
 
-## 2. System Architecture & Key Concepts
+## 1. Application Features
 
-1. **Dual Envelope API Contract (`student` + `data`)**:  
-   To prevent null exceptions across diverse client frameworks (Flutter models, Provider/Bloc/Riverpod state stores, React hooks), all core student and fleet payloads supply both `student: { ... }` and `data: { ... }` envelopes with `{ success: true, message: "..." }`.
-
-2. **Server-Side Activation Key System (`AM-XXXX`)**:  
-   Student registration and password resets generate cryptographically random, mobile-friendly 4-character codes prefixed with `AM-` (e.g., `AM-7K9P`), omitting ambiguous characters (`0/O`, `1/I`). This key is dispatched asynchronously via Brevo HTTP API and serves as an instant password or reset token.
-
-3. **Multi-Field Request Body Aliases**:  
-   Authentication and registration endpoints flexibly extract client identifiers and verification tokens across varying frontend naming conventions:
-   * **Identifiers**: `student_id`, `studentId`, `register_no`, `roll_no`, `id`, `email`, `identifier`, `username`.
-   * **Keys / Tokens / OTPs**: `current_key`, `activation_key`, `activationKey`, `token`, `otp`, `code`, `key`, `reset_token`, `resetToken`, `temp_password`, `temporary_password`, `current_password`, `old_password`.
-
-4. **Stateless JWT Verification & Role-Level Access**:  
-   The frontend React admin dashboard authenticates against Supabase Auth to obtain a JWT. The Express backend validates this token statelessly via `supabase.auth.getUser()`.
+### Administrative Web Portal
+1. **Interactive Real-Time Fleet Dashboard**:
+   - Aggregate fleet metrics: Total Buses, Active Vehicles, Offline/Maintenance Units, and Registered Student Counts.
+   - Interactive full-screen Leaflet map displaying real-time vehicle markers with smooth coordinate interpolation.
+   - Live GPS tracking panel with telemetry cards: vehicle speed, ignition status, driver contacts, and assigned route progress.
+2. **Student Transport Roster Management**:
+   - Dynamic roster table rendering pre-loaded student profiles, assigned bus routes, pickup stops, bus numbers, and mobile registration status.
+   - Instant search across Student ID, Full Name, Department, Email, and Route Name.
+   - Multi-tier filtering by Academic Year (1st, 2nd, 3rd, 4th Year) and Registration Status (Registered vs. Pending).
+   - Detailed Student Profile modal displaying comprehensive transit allocations and parent emergency contacts.
+3. **Event-Driven Auto-Refresh (Zero Unnecessary Polling)**:
+   - Built with **Supabase Realtime** (`postgres_changes` on `bus_tracking.students`).
+   - The table automatically revalidates when a student self-registers or when an admin updates records, without periodic timer overhead or button spinning.
+   - **Structural Equality Diffing (`areStudentListsEqual`)**: Incoming server records are compared against active state; unchanged data bypasses re-rendering completely to eliminate layout flickering.
+   - Skeleton loader is strictly reserved for the first cold start; background updates update seamlessly in place.
+4. **Resilient Route & Stop Selection**:
+   - Route dropdown auto-loads routes and dynamic stops via cached API queries with `onFocus` fallback triggers.
+   - Automatic route-name matching (`route_name` $\rightarrow$ `route_id`) ensures students with existing textual assignments are correctly bound in edit modals.
+5. **High-Performance Bulk Student Importer**:
+   - Ingests CSV or plain text student files formatted as `StudentID, Full Name, Academic Year`.
+   - In-CSV duplicate detection and real-time database conflict checks.
+   - Automatic header row detection, CSV validation statistics, and downloadable sample templates.
+6. **Single Student Onboarding & Edit Modals**:
+   - Full CRUD form handling: Student ID, Full Name, Academic Year, Department, Student Mobile, Email, Parent Guardian Name, Parent Phone, Assigned Route, and Assigned Bus Stop.
+   - Synchronous dependent stop extraction: picking a route instantly surfaces its sequence of stops.
+7. **Accessibility & Design Aesthetics**:
+   - WCAG-compliant keyboard focus trapping (`useModalFocusTrap`) and <kbd>Escape</kbd> dismissal across all modals.
+   - Centralized animated Toast notification system for CRUD confirmations.
+   - Dark theme sidebar with active tab highlighting and responsive drawer layout.
 
 ---
 
-## 3. Folder Structure & File Descriptions
+### Mobile App Integration (Flutter / Student App)
+1. **Student Self-Verification**:
+   - Students input their college Student ID (`student_id` or Register Number); the system validates pre-loaded eligibility and returns their masked profile.
+2. **Self-Registration & Transactional Email Activation**:
+   - Mobile users confirm their profile, set their contact details, and self-register.
+   - The backend automatically provisions a cryptographically secure `AM-XXXX` activation key and delivers it via the **Brevo HTTP REST API** to the student's email.
+3. **Flexible Login**:
+   - Students authenticate via either their registered credentials or their unique `AM-XXXX` activation key.
+   - Audited key verification fallback against `bus_tracking.activation_keys`.
+4. **Transit & Stop Allocation Resolution**:
+   - Backend automatically maps student stops and routes to corresponding vehicle numbers and driver contacts for live tracking inside the mobile app.
+
+---
+
+### Backend & IoT GPS Engine
+1. **Express 5 Modular Architecture**:
+   - Strict separation of concerns (Routes $\rightarrow$ Controllers $\rightarrow$ Services $\rightarrow$ Supabase Database).
+   - Standardized JSON response envelopes (`{ success, message, data, student }`).
+2. **Autonomous SkyNav GPS Polling Pipeline**:
+   - Resilient background worker (`gpsScheduler.js`) querying the SkyNav API, parsing raw telemetry, handling token expiration, and batch-upserting coordinates to Postgres.
+3. **Direct Hardware Push Gateway**:
+   - High-throughput push endpoint (`/api/realtime/gps/update`) accepting live hardware tracker coordinates and immediately broadcasting them over **Socket.IO**.
+4. **Permissive Development Authentication**:
+   - Public read access for transit routes (`/api/routes`) and permissive development access to student rosters, while strictly enforcing JWT authentication in production.
+5. **Chunked Pagination**:
+   - Bypasses Supabase 1,000-row query limits via programmatic `.range(from, to)` chunking to seamlessly deliver complete rosters (>10,000 students).
+
+---
+
+## 2. System Architecture
+
+### High-Level Architectural Diagram
 
 ```text
-web/backend/
-├── config/
-│   ├── env.js                # Environment variable validation & centralized settings
-│   ├── socket.js             # Singleton Socket.IO instance and WebSocket initialization
-│   └── supabase.js           # Supabase client factory (Anon & Service Role for bus_tracking)
-├── controllers/
-│   ├── bus.controller.js     # Bus fleet CRUD controller handlers
-│   ├── dashboard.controller.js # Fleet KPI statistics handler
-│   ├── public.controller.js  # Unauthenticated bus and tracking endpoints for Flutter
-│   └── route.controller.js   # Route and bus stop controller handlers
-├── docs/
-│   ├── ARCHITECTURE.md       # Detailed technical design & component architecture
-│   ├── DATABASE_SCHEMA_SEPARATION.md # Multi-schema transition documentation
-│   └── TEAM_WALKTHROUGH.md   # Deployment, scaling, and architectural refactoring notes
-├── gps/
-│   ├── gps.controller.js     # Manual GPS sync and status inspection controller
-│   ├── gps.routes.js         # Express routes for GPS sync & vehicle query endpoints
-│   ├── gps.service.js        # SkyNav GPS external API integration client
-│   ├── gpsLogger.js          # Prefixed [GPS] console logger for cloud monitors
-│   ├── gpsParser.js          # Telemetry sanitization, coordinate bounds & status parser
-│   ├── gpsScheduler.js       # Autonomous 30-second background polling cycle
-│   └── gpsUpdater.js         # Delta coordinate comparison and Supabase batch updater
-├── middleware/
-│   ├── auth.middleware.js    # Bearer JWT verification against Supabase Auth
-│   ├── error.middleware.js   # Centralized global Express error handler
-│   └── logger.middleware.js  # HTTP request logger (Method, URL, Status, Latency)
-├── routes/
-│   ├── admin.routes.js       # Admin system configuration endpoints (/api/admin)
-│   ├── bus.routes.js         # Fleet management routes (/api/buses)
-│   ├── dashboard.routes.js   # Fleet KPI routes (/api/dashboard)
-│   ├── public.routes.js      # Public Flutter app transit routes (/api/public)
-│   ├── realtimeGps.routes.js # Direct hardware telemetry push routes (/api/realtime/gps)
-│   ├── route.routes.js       # Route management routes (/api/routes)
-│   └── students.js           # Student verification, registration, auth, & roster routes
-├── services/
-│   ├── admin.service.js      # Database operations for admin system configurations
-│   ├── bus.service.js        # Bus operations with dynamic GPS telemetry merge
-│   ├── dashboard.service.js  # Fleet statistics aggregator (Active/Inactive/Pending)
-│   └── route.service.js      # Route creation, stop normalization, and deletion
-├── sql/
-│   ├── 01_amcet_schema_separation.sql      # Comprehensive PostgreSQL DDL for bus_tracking schema
-│   ├── 04_remove_route_code_migration.sql   # Safe migration to drop route_code column
-│   ├── bus_routes_rows.sql                 # Live bus_routes seed data
-│   ├── buses_rows.sql                      # Live buses fleet seed data
-│   ├── gps_telemetry_rows.sql              # Live GPS telemetry seed data
-│   └── students_rows.sql                   # Live student directory seed data
-├── utils/
-│   ├── httpClient.js         # HTTP client with retry logic & exponential backoff
-│   ├── realtimeState.js      # In-memory circular buffer for high-frequency GPS telemetry
-│   ├── responseHelper.js     # Standardized JSON response formatters (success / error)
-│   ├── email.js              # Brevo HTTP REST API email dispatcher with HTML templates
-│   └── sendEmail.js          # Backwards-compatible alias to email.js
-├── app.js                    # Express app initialization, CORS, and route mounting
-├── diagnose_supabase.js      # Diagnostic suite probing tables in 'bus_tracking' schema
-├── server.js                 # HTTP server lifecycle entry point & graceful shutdown
-├── test-skynav.js            # Standalone SkyNav provider connectivity tester
-├── test-supabase.js          # Fast Supabase database query tester
-└── tracker.js                # Local GPS simulator emitting coordinate routes
+ ┌─────────────────────────────────────────┐       ┌─────────────────────────────────────────┐
+ │       Student Mobile Application        │       │       Transport Admin Web Portal        │
+ │            (Flutter / Dart)             │       │            (React 18 + Vite)            │
+ └────────────────────┬────────────────────┘       └────────────────────┬────────────────────┘
+                      │ HTTPS (REST)                                    │ HTTPS + WebSockets
+                      ▼                                                 ▼
+ ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                Node.js Express Backend API                                │
+ │   ├── JWT Auth & Permissive Middleware     ├── SkyNav IoT GPS Pull Scheduler              │
+ │   ├── JSON Stop Resolution & Views         ├── Hardware Push Telemetry Receiver           │
+ │   ├── Brevo Email Dispatcher (AM-XXXX)     └── Socket.IO Real-Time Telemetry Emitter      │
+ └───────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                             │ Supabase Client v2 (Service Role & Schema Pool)
+                                             ▼
+ ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+ │                              Supabase PostgreSQL Database                                 │
+ │                        Dedicated Schema: "bus_tracking"                                   │
+ │   ├── buses (fleet metadata & driver info) ├── students (profiles, route_name, stop_name)│
+ │   ├── bus_routes (JSONB stops array)       ├── gps_telemetry (live coordinates & speed)   │
+ │   ├── activation_keys (audit trail)        └── students_with_stops_view (LATERAL join)    │
+ └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Database Schema & Entity Relationships
+### Event-Driven Real-Time Sync Flow
 
-All tables reside in the dedicated **`bus_tracking`** schema in PostgreSQL / Supabase.
-
-```mermaid
-erDiagram
-    BUS_ROUTES ||--o{ BUSES : "assigned to"
-    BUS_ROUTES ||--o{ BUS_STOPS : "contains"
-    BUS_ROUTES ||--o{ STUDENTS : "assigned to"
-    BUSES ||--o{ BUS_STOPS : "stops at"
-    BUSES ||--o{ GPS_TELEMETRY : "telemetry linked by vehicle_number"
-    STUDENTS ||--o{ ACTIVATION_KEYS : "audit history"
-
-    STUDENTS {
-        bigint id PK
-        varchar student_id UK "Unique Student Roll / ID"
-        text student_name
-        varchar email
-        varchar student_mobile
-        varchar department
-        varchar academic_year
-        integer pass_out_year
-        text parent_name
-        varchar parent_phone
-        varchar emergency_contact
-        varchar activation_key "Current Key or Password"
-        varchar bus_number
-        bigint route_id FK
-        text route_name
-        text boarding_stop
-        boolean is_registered
-        timestamptz registered_at
-        timestamptz last_login_at
-    }
-
-    ACTIVATION_KEYS {
-        bigint id PK
-        varchar student_id FK
-        varchar activation_key
-        varchar key_type "registration | forgot_password | admin_reset"
-        boolean is_used
-        timestamptz expires_at
-        timestamptz created_at
-        timestamptz used_at
-    }
-
-    BUSES {
-        bigint id PK
-        varchar bus_number "e.g. 16, 04"
-        varchar registration_number UK "e.g. TN20CH9640"
-        text driver_name
-        varchar driver_phone
-        bigint route_id FK
-        text route_name
-        integer capacity
-        varchar status "active | inactive | Pending (GPS)"
-        numeric latitude
-        numeric longitude
-        varchar imei
-        numeric speed
-        timestamptz gps_actual_time
-    }
-
-    BUS_ROUTES {
-        bigint id PK
-        text route_name UK
-        text origin
-        text destination
-        jsonb stops "Array of ordered stop objects"
-        boolean is_active
-    }
-
-    GPS_TELEMETRY {
-        bigint id PK
-        varchar vehicle_number UK
-        numeric latitude
-        numeric longitude
-        numeric speed
-        varchar raw_status "RUNNING | STOP | IDLE"
-        varchar ignition "ON | OFF"
-        timestamptz gps_actual_time
-        timestamptz received_at
-    }
+```text
+1. Student registers on Mobile App OR Admin edits record in Portal
+   │
+   ▼
+2. Backend persists record to Supabase (bus_tracking.students)
+   │
+   ▼
+3. Supabase emits postgres_changes event via WebSocket
+   │
+   ▼
+4. Frontend StudentsPage.jsx receives event on channel 'students-auto-sync'
+   │
+   ▼
+5. Debounced triggerSilentSync() fetches fresh roster in background
+   │
+   ▼
+6. areStudentListsEqual() performs shallow structural comparison:
+   ├── Data Identical? ──► Reuses existing array reference (0 re-renders, 0 layout shifts)
+   └── Data Changed?   ──► Smoothly updates only modified rows in place
 ```
 
 ---
 
-## 5. Complete API Endpoints Reference
+## 3. Current Database Schema Structure
 
-### 🟢 Public Student Mobile App Endpoints (Flutter)
+### Database Overview: Dedicated `bus_tracking` Schema
+All transit tables are isolated inside the `bus_tracking` PostgreSQL schema to prevent naming collisions and enforce strict multi-tenant boundary security.
 
-#### 1. Verify Student ID
-* **Method & URL**: `GET /api/students/verify/:student_id`
-* **Headers**: `Content-Type: application/json`
-* **URL Param**: `student_id` (e.g. `TEST999`)
-* **Success Response (`200 OK`)**:
+---
+
+### Table: `bus_tracking.buses`
+Stores college bus fleet vehicle metadata, assigned drivers, and current route mappings.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Unique internal bus identifier |
+| `bus_number` | `VARCHAR(50)` | `NOT NULL UNIQUE` | College fleet number (e.g., `"15"`, `"18"`, `"6"`) |
+| `registration_number` | `VARCHAR(50)` | `NOT NULL UNIQUE` | Official RTO vehicle license plate (e.g., `"TN23AB1234"`) |
+| `vehicle_number` | `VARCHAR(50)` | `NULLABLE` | Tracking identifier alias matching GPS tracker IMEI |
+| `driver_name` | `VARCHAR(100)`| `NULLABLE` | Assigned driver full name |
+| `driver_phone` | `VARCHAR(20)` | `NULLABLE` | Driver contact number |
+| `license_number`| `VARCHAR(50)` | `NULLABLE` | Driver commercial driving license number |
+| `route_id` | `BIGINT` | `REFERENCES bus_tracking.bus_routes(id)` | Current assigned route reference |
+| `route_name` | `VARCHAR(100)`| `NULLABLE` | Denormalized human-readable route name |
+| `status` | `VARCHAR(30)` | `DEFAULT 'Pending (GPS)'` | Status: `'Active'`, `'Inactive'`, `'Maintenance'`, `'Pending (GPS)'` |
+| `latitude` | `DOUBLE PRECISION` | `NULLABLE` | Last reported GPS latitude coordinate |
+| `longitude`| `DOUBLE PRECISION` | `NULLABLE` | Last reported GPS longitude coordinate |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Record creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Last update timestamp |
+
+---
+
+### Table: `bus_tracking.bus_routes`
+Stores transit routes and their complete sequenced path of boarding stops as a structured JSONB document.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Unique route ID |
+| `route_name` | `VARCHAR(100)`| `NOT NULL UNIQUE` | Route name (e.g., `"AMBUR"`, `"KANNAMANGALAM"`, `"GUDIYATHAM"`) |
+| `origin` | `VARCHAR(100)`| `NOT NULL` | Route starting point (e.g., `"AMBUR"`) |
+| `destination`| `VARCHAR(100)`| `DEFAULT 'AMCET'` | Destination campus |
+| `stops` | `JSONB` | `DEFAULT '[]'::jsonb` | Ordered array of stop objects with Unix ms IDs |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Route creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Route update timestamp |
+
+---
+
+### Table: `bus_tracking.students`
+Stores both pre-loaded roster records and registered student mobile application credentials.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Unique internal student ID |
+| `student_id` | `VARCHAR(50)` | `NOT NULL UNIQUE` | College ID / Roll Number (e.g., `"F26GQAD406"`, `"5412"`) |
+| `student_name` | `VARCHAR(100)`| `NOT NULL` | Student full legal name |
+| `email` | `VARCHAR(150)`| `NULLABLE` | Registered email address (used for Brevo keys & auth) |
+| `student_email`| `VARCHAR(150)`| `NULLABLE` | Alias for student email address |
+| `department` | `VARCHAR(100)`| `NULLABLE` | Branch of study (e.g., `"Computer Science & Engineering"`) |
+| `department_code` | `VARCHAR(20)` | `NULLABLE` | Department code abbreviation (e.g., `"CSE"`, `"IT"`) |
+| `academic_year`| `VARCHAR(20)` | `DEFAULT '1st Year'` | Academic year (`'1st Year'`, `'2nd Year'`, `'3rd Year'`, `'4th Year'`) |
+| `year` | `VARCHAR(20)` | `DEFAULT '1st Year'` | Database academic year format (`'1.0'`, `'2.0'`, `'3.0'`, `'4.0'`) |
+| `pass_out_year`| `VARCHAR(10)` | `NULLABLE` | Expected graduation year |
+| `student_mobile` | `VARCHAR(20)` | `NULLABLE` | Student phone number |
+| `parent_name` | `VARCHAR(100)`| `NULLABLE` | Parent or guardian full name |
+| `parent_phone` | `VARCHAR(20)` | `NULLABLE` | Emergency guardian contact number |
+| `emergency_contact` | `VARCHAR(20)` | `NULLABLE` | Alternate emergency contact phone number |
+| `activation_key`| `VARCHAR(50)` | `NULLABLE` | Generated `AM-XXXX` cryptographic activation key |
+| `password_hash`| `VARCHAR(255)`| `NULLABLE` | Securely hashed password (if student configured custom password) |
+| `route_id` | `BIGINT` | `NULLABLE` | Assigned bus route foreign key reference |
+| **`route_name`** | `VARCHAR(100)`| `NULLABLE` | **Directly persisted route name** (e.g., `"AMBUR"`, `"KANNAMANGALAM"`) |
+| `stop_id` | `TEXT` / `VARCHAR(100)` | `NULLABLE` | Assigned stop ID (stored as string to accommodate high-precision IDs) |
+| **`stop_name`** | `VARCHAR(100)`| `NULLABLE` | **Directly persisted stop name** (e.g., `"RANIPET"`, `"USSOOR"`) |
+| `boarding_stop`| `VARCHAR(100)`| `NULLABLE` | Boarding location alias |
+| `drop_stop` | `VARCHAR(100)`| `NULLABLE` | Evening drop-off stop location |
+| `bus_number` | `VARCHAR(50)` | `NULLABLE` | Assigned bus vehicle number |
+| `is_registered`| `BOOLEAN` | `DEFAULT FALSE` | Registration flag (set to true on mobile registration) |
+| `registered_at`| `TIMESTAMPTZ` | `NULLABLE` | Timestamp when student completed registration |
+| `last_login_at`| `TIMESTAMPTZ` | `NULLABLE` | Last student mobile application login timestamp |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Record creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Record modification timestamp |
+
+> [!NOTE]
+> `route_name` and `stop_name` are now stored directly in `bus_tracking.students` as persistent physical columns. They are automatically backfilled and maintained during student creation and editing, guaranteeing 0ms lookup latency and eliminating complex runtime joins.
+
+---
+
+### Table: `bus_tracking.gps_telemetry`
+Stores time-series GPS readings from IoT tracking units.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Unique telemetry entry ID |
+| `vehicle_number` | `VARCHAR(50)` | `NOT NULL` | Tracked bus vehicle number or SkyNav unit ID |
+| `latitude` | `DOUBLE PRECISION` | `NOT NULL` | Decimal latitude coordinate |
+| `longitude` | `DOUBLE PRECISION` | `NOT NULL` | Decimal longitude coordinate |
+| `speed` | `DOUBLE PRECISION` | `DEFAULT 0.0` | Vehicle speed in km/h |
+| `heading` | `DOUBLE PRECISION` | `DEFAULT 0.0` | Direction heading in degrees (0–360) |
+| `ignition_status`| `BOOLEAN` | `DEFAULT FALSE` | Engine ignition status |
+| `timestamp` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Telemetry collection timestamp |
+
+---
+
+### Table: `bus_tracking.activation_keys`
+Audit log recording every issued activation token and verification event.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Unique record ID |
+| `student_id` | `VARCHAR(50)` | `NOT NULL` | Associated student identifier |
+| `activation_key`| `VARCHAR(50)` | `NOT NULL` | Issued `AM-XXXX` token |
+| `is_used` | `BOOLEAN` | `DEFAULT FALSE` | Token usage state |
+| `used_at` | `TIMESTAMPTZ` | `NULLABLE` | Token redemption timestamp |
+| `created_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Token issue timestamp |
+
+---
+
+### Table: `bus_tracking.system_configs`
+Stores administrative system configurations and integration flags.
+
+| Column | Data Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` | `PRIMARY KEY GENERATED ALWAYS AS IDENTITY` | Internal ID |
+| `key` | `VARCHAR(100)`| `NOT NULL UNIQUE` | Configuration key (e.g., `'GPS_POLL_INTERVAL_MS'`) |
+| `value` | `TEXT` | `NOT NULL` | Configuration value |
+| `description` | `TEXT` | `NULLABLE` | Human-readable explanation of key |
+| `updated_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Last update timestamp |
+
+---
+
+### View: `bus_tracking.students_with_stops_view`
+A PostgreSQL lateral unnesting view providing backward-compatible dynamic join access between students and embedded JSON stops:
+
+```sql
+CREATE OR REPLACE VIEW bus_tracking.students_with_stops_view AS
+SELECT 
+    s.*,
+    COALESCE(s.stop_name, stop_elem->>'stop_name', s.boarding_stop) AS resolved_stop_name,
+    COALESCE(s.route_name, r.route_name) AS resolved_route_name,
+    COALESCE(s.bus_number, b.bus_number) AS resolved_bus_number
+FROM bus_tracking.students s
+LEFT JOIN bus_tracking.bus_routes r ON s.route_id = r.id
+LEFT JOIN LATERAL jsonb_array_elements(r.stops) AS stop_elem 
+    ON (stop_elem->>'id')::text = s.stop_id::text
+LEFT JOIN bus_tracking.buses b ON b.route_id = s.route_id;
+```
+
+---
+
+### JSONB Stops Schema & Lateral Projection
+Each route in `bus_tracking.bus_routes.stops` contains an ordered JSON array:
+
+```json
+[
+  {
+    "id": "1792671106096.69",
+    "stop_name": "OCHERI",
+    "stop_order": 1
+  },
+  {
+    "id": "1792671110307.25",
+    "stop_name": "KAVERIPAKKAM",
+    "stop_order": 2
+  },
+  {
+    "id": "1792671135006.47",
+    "stop_name": "RANIPET",
+    "stop_order": 3
+  },
+  {
+    "id": "1792671139359.26",
+    "stop_name": "AMCET",
+    "stop_order": 4
+  }
+]
+```
+
+- **High-Precision Numeric IDs**: Encoded with floating-point Unix millisecond timestamps (e.g., `1792671106096.69`). Stored as `TEXT` in student records to prevent integer precision truncation.
+- **Ordered Route Sequences**: `stop_order` guarantees deterministic sequencing for stop builder modals and driver navigation manifests.
+
+---
+
+## 4. Complete API Reference & Use Cases
+
+### Overview & Base URLs
+- **Local API Base**: `http://localhost:3001`
+- **Standard Response Envelope**:
+  ```json
+  {
+    "success": true,
+    "message": "Operation completed successfully",
+    "data": { ... }
+  }
+  ```
+
+---
+
+### Student Self-Service & Authentication APIs (Mobile)
+
+#### 1. Student ID Verification
+- **Endpoint**: `GET /api/students/verify/:student_id`
+- **Access**: Public (Unauthenticated)
+- **Use Case**: Called by the Flutter mobile app when a student enters their College ID. Verifies pre-loaded eligibility and returns their department, assigned route, and masked registration status.
+- **Sample Response**:
   ```json
   {
     "success": true,
     "message": "Student ID verified successfully.",
     "student": {
-      "id": 1349,
-      "student_id": "TEST999",
-      "student_name": "Lokesh Nagarajan",
-      "email": "lokesh@example.com",
-      "student_mobile": "9876543210",
-      "year": "3rd Year",
-      "academic_year": "3rd Year",
-      "department": "CSE",
-      "route_id": 1,
-      "route_name": "SANKARANPALAYAM",
-      "bus_number": "04",
-      "stop_name": "Old Bus Stand",
-      "boarding_stop": "Old Bus Stand",
+      "student_id": "F26GQAD406",
+      "student_name": "ANISH V",
+      "department": "B.E - Computer Science and Engineering",
+      "year": "1st Year",
+      "route_name": "AMBUR",
+      "stop_name": "RANIPET",
+      "bus_number": "15",
       "is_registered": false
-    },
-    "data": { ... },
-    "student_id": "TEST999",
-    "student_name": "Lokesh Nagarajan",
-    "is_registered": false
+    }
   }
   ```
-* **Error Response (`404 Not Found`)**:
-  ```json
-  {
-    "success": false,
-    "error": "Student ID not found in college records.",
-    "message": "Student ID not found in college records."
-  }
-  ```
-
----
 
 #### 2. Student Self-Registration
-* **Method & URL**: `POST /api/students/register`
-* **Request Body**:
+- **Endpoint**: `POST /api/students/register`
+- **Access**: Public (Unauthenticated)
+- **Use Case**: Called during mobile app onboarding. Validates student profile, assigns bus details, provisions a secure `AM-XXXX` activation key, and dispatches an email via Brevo.
+- **Request Body**:
   ```json
   {
-    "student_id": "TEST999",
-    "student_name": "Lokesh Nagarajan",
-    "email": "lokesh@example.com",
-    "route_name": "SANKARANPALAYAM",
-    "stop_name": "Old Bus Stand",
-    "department": "CSE",
-    "academic_year": "3rd Year",
-    "student_mobile": "9876543210"
-  }
-  ```
-* **Success Response (`201 Created`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Registration successful! Your temporary password has been sent to your registered email (lo***h@example.com).",
-    "student": {
-      "id": 1349,
-      "student_id": "TEST999",
-      "student_name": "Lokesh Nagarajan",
-      "email": "lokesh@example.com",
-      "route_name": "SANKARANPALAYAM",
-      "bus_number": "04",
-      "is_registered": true,
-      "registration_status": "Registered"
-    },
-    "data": { ... },
-    "email_sent": true,
-    "email_hint": "lo***h@example.com"
-  }
-  ```
-* **Error Response (`409 Conflict`)**:
-  ```json
-  {
-    "success": false,
-    "error": "This Student ID is already registered. Please sign in or use \"Forgot Password\" to retrieve your credentials.",
-    "message": "This Student ID is already registered. Please sign in or use \"Forgot Password\" to retrieve your credentials."
+    "student_id": "F26GQAD406",
+    "student_name": "ANISH V",
+    "email": "anish@gmail.com",
+    "student_mobile": "9876543210",
+    "parent_name": "Venkatesan",
+    "parent_phone": "9842012345",
+    "route_name": "AMBUR",
+    "stop_name": "RANIPET",
+    "academic_year": "1st Year"
   }
   ```
 
----
-
-#### 3. Student Sign-In
-* **Method & URL**: `POST /api/students/login`
-* **Request Body** (Supports `student_id` or `email`, and `password` or `activation_key`):
+#### 3. Student Mobile Login
+- **Endpoint**: `POST /api/students/login`
+- **Access**: Public (Unauthenticated)
+- **Use Case**: Authenticates a student via their `student_id` and password or issued `AM-XXXX` activation key. Returns resolved route, assigned bus number, vehicle number, and driver details.
+- **Request Body**:
   ```json
   {
-    "student_id": "TEST999",
-    "password": "AM-7K9P"
-  }
-  ```
-* **Success Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Login successful!",
-    "student": {
-      "id": 1349,
-      "student_id": "TEST999",
-      "student_name": "Lokesh Nagarajan",
-      "email": "lokesh@example.com",
-      "department": "CSE",
-      "academic_year": "3rd Year",
-      "route_id": 1,
-      "route_name": "SANKARANPALAYAM",
-      "bus_number": "04",
-      "vehicle_number": "TN20CH9640",
-      "driver_name": "LOKII",
-      "driver_phone": "1654655464",
-      "bus_status": "Active",
-      "is_registered": true
-    },
-    "data": { ... }
-  }
-  ```
-* **Error Response (`401 Unauthorized`)**:
-  ```json
-  {
-    "success": false,
-    "error": "Invalid Student ID or Password / Activation Key.",
-    "message": "Invalid Student ID or Password / Activation Key."
+    "student_id": "F26GQAD406",
+    "password": "AM-8TZX"
   }
   ```
 
----
-
-#### 4. Forgot Password (Generate & Email New Key)
-* **Method & URL**: `POST /api/students/forgot-password`
-* **Request Body**:
-  ```json
-  {
-    "student_id": "TEST999"
-  }
-  ```
-  *(Accepts `student_id`, `studentId`, `email`, `register_no`, `roll_no`, or `identifier`)*
-* **Success Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "A new activation key has been sent to your registered email address (lo***h@example.com).",
-    "email_hint": "lo***h@example.com",
-    "email_sent": true
-  }
-  ```
-
----
+#### 4. Forgot Password / Request Key
+- **Endpoint**: `POST /api/students/forgot-password`
+- **Access**: Public (Unauthenticated)
+- **Use Case**: Dispatches a new `AM-XXXX` reset token to the student's registered email address via Brevo.
 
 #### 5. Reset Password
-* **Method & URL**: `POST /api/students/reset-password`
-* **Request Body**:
-  ```json
-  {
-    "student_id": "TEST999",
-    "otp": "AM-7K9P",
-    "new_password": "MyNewSecurePassword123"
-  }
-  ```
-  *(Accepts key aliases: `otp`, `code`, `activation_key`, `token`, `key`, `current_password`, `temp_password`)*
-* **Success Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Password reset successfully! You can now sign in with your new password."
-  }
-  ```
-* **Error Response (`401 Unauthorized`)**:
-  ```json
-  {
-    "success": false,
-    "error": "Invalid activation key, OTP, or reset token.",
-    "message": "Invalid activation key, OTP, or reset token."
-  }
-  ```
+- **Endpoint**: `POST /api/students/reset-password`
+- **Access**: Public (Unauthenticated)
+- **Use Case**: Validates current reset token/key and stores new student password.
+
+#### 6. Email Service Health & Test Dispatch
+- `GET /api/students/email-status`: Returns Brevo transactional email configuration state.
+- `POST /api/students/test-email`: Sends a test activation key to verify SMTP/HTTP delivery.
 
 ---
 
-### 🟢 Public Transit & Tracking Endpoints
+### Transit Routes & Dynamic Stops APIs
 
-#### 6. Get All Buses & Stops (Flutter Route List)
-* **Method & URL**: `GET /api/public/buses`
-* **Success Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Buses retrieved successfully",
-    "data": [
-      {
-        "id": 2,
-        "routeId": 1,
-        "routeName": "SANKARANPALAYAM",
-        "busNo": "Bus 04",
-        "busId": "04",
-        "driverName": "LOKII",
-        "driverPhone": "1654655464",
-        "forwardStops": ["STOP 1", "STOP 2", "CAMPUS"],
-        "registrationNumber": "TN20CH9640",
-        "status": "Pending (GPS)"
-      }
-    ]
-  }
-  ```
-
-#### 7. Live Bus Tracking Detail
-* **Method & URL**: `GET /api/public/buses/:id/tracking`
-* **Success Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Tracking data retrieved successfully",
-    "data": {
-      "routeId": "2",
-      "vehicleId": "TN20CH9640",
-      "latitude": 12.9165,
-      "longitude": 79.1325,
-      "updatedAt": "2026-10-21T18:00:00.000Z",
-      "speedKph": 42.5,
-      "status": "RUNNING",
-      "ignition": "ON"
-    }
-  }
-  ```
+| Method | Route | Access | Description & Use Case |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/routes` | Permissive (`optionalAuthenticate`) | Retrieves all 12 college bus routes with embedded JSON stops. Populates admin and student route dropdowns. |
+| `GET` | `/api/routes/:route_id/stops` | Permissive (`optionalAuthenticate`) | Extracts JSON stops array for a specific route without loading entire route metadata. |
+| `GET` | `/api/routes/:id` | Permissive (`optionalAuthenticate`) | Returns single route details by route ID. |
+| `POST` | `/api/routes` | Protected (`authenticate`) | Creates a new bus route with custom origin, destination, and sequenced JSON stops. |
+| `PUT` | `/api/routes/:id` | Protected (`authenticate`) | Updates route name or re-sequences stop order. |
+| `DELETE`| `/api/routes/:id` | Protected (`authenticate`) | Deletes a route record from the database. |
 
 ---
 
-### 🔒 Protected Fleet & Dashboard Endpoints
+### Student Administration & Roster APIs
 
-> **Authentication Required:** Send `Authorization: Bearer <supabase_access_token>`
-
-#### 8. Dashboard Fleet KPI Cards
-* **Method & URL**: `GET /api/dashboard`
-* **Response (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "message": "Fleet stats retrieved successfully",
-    "data": {
-      "totalBuses": 12,
-      "activeBuses": 8,
-      "offlineBuses": 2,
-      "pendingGps": 2,
-      "lastSyncAt": "2026-10-21T17:42:00.000Z"
-    }
-  }
-  ```
-
-#### 9. Buses Management
-* `GET /api/buses` — List all buses enriched with route stops and telemetry.
-* `GET /api/buses/:id` — Get single bus details by primary key.
-* `POST /api/buses` — Create new bus with payload: `{ bus_number, registration_number, driver_name, driver_phone, route_id, capacity }`.
-* `PUT /api/buses/:id` — Update bus metadata.
-* `DELETE /api/buses/:id` — Remove a bus.
-
-#### 10. Route Management
-* `GET /api/routes` — List all bus routes.
-* `GET /api/routes/:id` — Get route and stops by ID.
-* `POST /api/routes` — Create route: `{ route_name, origin, destination, stops: ["STOP 1", "STOP 2"] }`.
-* `PUT /api/routes/:id` — Update route details and re-ordered stop list.
-* `DELETE /api/routes/:id` — Delete a route.
+| Method | Route | Access | Description & Use Case |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/students` | Permissive (`optionalAuthenticate`) | Chunked pagination fetcher delivering the complete student roster with persistent `route_name` and `stop_name`. |
+| `POST` | `/api/students` | Protected (`authenticate`) | Adds a single student record with immediate in-memory cache invalidation. |
+| `POST` | `/api/students/import` | Protected (`authenticate`) | High-speed bulk CSV importer with in-CSV and in-DB duplicate skipping. |
+| `PUT` | `/api/students/:id` | Protected (`authenticate`) | Updates student profile, contact numbers, route, and boarding stop. |
+| `DELETE`| `/api/students/:id` | Protected (`authenticate`) | Removes a student from the transport database. |
 
 ---
 
-### 🔒 Protected Student Management Endpoints (Admin)
+### Bus Fleet Management APIs
 
-* `GET /api/students` — Fetch paginated student roster with transit metadata (Chunked >1,000 bypassing PostgREST row limits).
-* `POST /api/students/import` — Bulk CSV / array upload of pre-loaded student records.
-* `PUT /api/students/:id` — Update student profile, assigned bus, or boarding stop.
-* `DELETE /api/students/:id` — Remove student record.
-
----
-
-### 🔒 Protected GPS & Real-time Telemetry Endpoints
-
-* `GET /api/gps/status` — Returns background GPS scheduler status, last sync timestamp, and active interval.
-* `GET /api/gps/sync` — Manually triggers an immediate SkyNav synchronization run.
-* `POST /api/realtime/gps/update` — Direct push endpoint from hardware trackers or simulators:
-  ```json
-  {
-    "bus_id": "BUS001",
-    "latitude": 13.0827,
-    "longitude": 80.2707,
-    "speed": 45,
-    "heading": 90
-  }
-  ```
-* `GET /api/realtime/gps/live` — Returns the latest hardware GPS packet stored in-memory.
-* `GET /api/realtime/gps/history` — Returns memory-cached telemetry history since process start.
-* `GET /api/realtime/gps/history/db` — Queries persistent `gps_logs` table from database.
+| Method | Route | Access | Description & Use Case |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/buses` | Protected (`authenticate`) | Lists all buses merged with live GPS telemetry, driver information, and route paths. |
+| `GET` | `/api/buses/:id` | Protected (`authenticate`) | Retrieves detailed specifications and driver contacts for a single bus. |
+| `POST` | `/api/buses` | Protected (`authenticate`) | Adds a new bus vehicle to the transport fleet. |
+| `PUT` | `/api/buses/:id` | Protected (`authenticate`) | Updates vehicle assignment, driver details, or maintenance status. |
+| `DELETE`| `/api/buses/:id` | Protected (`authenticate`) | Decommissions a vehicle from the fleet. |
 
 ---
 
-### 🔒 Protected System Configuration Endpoints
+### Live GPS Telemetry & Hardware Push APIs
 
-* `GET /api/admin/configs` — Fetches key-value configurations from `admin.system_configs`.
-* `PUT /api/admin/configs/:key` — Upserts a system configuration setting.
+| Method | Route | Access | Description & Use Case |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/realtime/gps/update` | Protected (`authenticate`) | Ingests live latitude/longitude push from hardware IoT trackers and immediately emits Socket.IO update events. |
+| `GET` | `/api/realtime/gps/live` | Protected (`authenticate`) | Reads current in-memory GPS state for all connected tracker units. |
+| `GET` | `/api/realtime/gps/history` | Protected (`authenticate`) | Retrieves in-memory circular buffer breadcrumbs for route playback. |
+| `GET` | `/api/gps/status` | Protected (`authenticate`) | Checks SkyNav background scheduler health, error rates, and last polling timestamp. |
+| `GET` | `/api/gps/sync` | Protected (`authenticate`) | Triggers an immediate manual SkyNav API sync cycle. |
+| `GET` | `/api/gps/vehicles` | Protected (`authenticate`) | Returns list of vehicles actively reporting telemetry on SkyNav. |
+| `GET` | `/api/gps/location/:vehicleNumber`| Protected (`authenticate`) | Returns current GPS coordinates for a specific license plate. |
 
 ---
 
-## 6. Environment Variables Guide (.env)
+### Dashboard Analytics APIs
 
-Create a `.env` file in the `web/backend/` root directory:
+- **Endpoint**: `GET /api/dashboard`
+- **Access**: Protected (`authenticate`)
+- **Use Case**: Returns aggregated metrics for top KPI cards: Total Registered Buses, Active Units, Offline Fleet Units, and Fleet Health Status.
 
+---
+
+### System Configuration APIs
+
+- `GET /api/admin/configs`: Reads system configurations (e.g. `GPS_POLL_INTERVAL_MS`).
+- `PUT /api/admin/configs/:key`: Updates an administrative configuration parameter in `bus_tracking.system_configs`.
+
+---
+
+## 5. Repository Directory & File Structure
+
+```text
+BUSSYSTEM/web/
+├── .env.example                                  # Root environment variables template
+├── .gitignore                                    # Git exclusion rules
+├── package-lock.json                             # Root lockfile
+├── README.md                                     # System documentation (You are here)
+├── supabase db.txt                               # Quick-reference Supabase schema connection notes
+│
+├── backend/                                      # Express 5 REST API & IoT GPS Engine
+│   ├── .env                                      # Active backend environment variables (git-ignored)
+│   ├── .env.example                              # Template with all required backend config keys
+│   ├── app.js                                    # Express app factory, CORS, logger, and route mounting
+│   ├── server.js                                 # HTTP server bootstrap, Socket.IO, and scheduler launch
+│   ├── package.json                              # Backend dependencies (Express 5, Supabase, Socket.IO)
+│   ├── nodemon.json                              # Nodemon hot-reloading configuration
+│   ├── diagnose_supabase.js                      # Diagnostic utility verifying Supabase schema connectivity
+│   ├── test-skynav.js                            # Standalone test script validating SkyNav IoT authentication
+│   ├── test-supabase.js                          # Standalone verification script for Supabase tables
+│   ├── tracker.js                                # Background simulation utility for vehicle telemetry
+│   │
+│   ├── config/                                   # Core Configuration Modules
+│   │   ├── env.js                                # Environment variable validation & fallback defaults
+│   │   ├── socket.js                             # Singleton Socket.IO server initialization
+│   │   └── supabase.js                           # Supabase Client Factory (bus_tracking schema isolation)
+│   │
+│   ├── controllers/                              # Express Route Controllers
+│   │   ├── bus.controller.js                     # Fleet CRUD & metadata query handlers
+│   │   ├── dashboard.controller.js               # Fleet analytics and aggregate KPI calculations
+│   │   ├── public.controller.js                  # Unauthenticated student endpoints (mobile fleet views)
+│   │   └── route.controller.js                   # Route queries & JSON stops extraction handlers
+│   │
+│   ├── docs/                                     # System Architecture & Technical Specifications
+│   │   ├── ARCHITECTURE.md                       # Comprehensive deep-dive into platform architecture
+│   │   ├── DATABASE_SCHEMA_SEPARATION.md         # Schema separation migration documentation
+│   │   ├── GPS_ARCHITECTURE.md                   # SkyNav polling & hardware push pipeline specifications
+│   │   ├── TEAM_WALKTHROUGH.md                   # Engineering onboard walkthrough guide
+│   │   └── skynav.txt                            # Raw SkyNav API payload responses & documentation
+│   │
+│   ├── gps/                                      # SkyNav Autonomous IoT GPS Integration
+│   │   ├── gps.controller.js                     # Manual sync and GPS telemetry inspection handlers
+│   │   ├── gps.routes.js                         # Express routing for /api/gps endpoints
+│   │   ├── gps.service.js                        # SkyNav REST API client with automatic token renew
+│   │   ├── gpsLogger.js                          # Standardized console & file logger for GPS events
+│   │   ├── gpsParser.js                          # Raw telemetry sanitization & GPS data normalizer
+│   │   ├── gpsScheduler.js                       # Autonomous 30s background polling scheduler
+│   │   └── gpsUpdater.js                         # Coordinate delta comparison & Supabase batch updater
+│   │
+│   ├── middleware/                               # Request Lifecycle Middleware
+│   │   ├── auth.middleware.js                    # Supabase JWT token verification & optionalAuthenticate
+│   │   ├── error.middleware.js                   # Centralized error handler formatting JSON error responses
+│   │   └── logger.middleware.js                  # Request logging interceptor (Method, URL, Status, Latency)
+│   │
+│   ├── routes/                                   # REST API Route Declarations
+│   │   ├── admin.routes.js                       # System configuration routes (/api/admin)
+│   │   ├── bus.routes.js                         # Fleet management routes (/api/buses)
+│   │   ├── dashboard.routes.js                   # Dashboard KPI routes (/api/dashboard)
+│   │   ├── public.routes.js                      # Unauthenticated student routes (/api/public)
+│   │   ├── realtimeGps.routes.js                 # Direct hardware GPS push endpoints (/api/realtime/gps)
+│   │   ├── route.routes.js                       # Bus route & stop sequences (/api/routes)
+│   │   └── students.js                           # Student verification, registration, login & admin roster
+│   │
+│   ├── services/                                 # Database Data Access Layer
+│   │   ├── admin.service.js                      # Supabase queries for admin configurations
+│   │   ├── bus.service.js                        # Fleet bus operations merged with live GPS telemetry
+│   │   ├── dashboard.service.js                  # Fleet operational status computations
+│   │   └── route.service.js                      # Route & stop queries targeting bus_tracking schema
+│   │
+│   ├── sockets/                                  # WebSockets (Socket.IO)
+│   │   └── location.socket.js                    # Live GPS event broadcaster for moving vehicles
+│   │
+│   ├── sql/                                      # PostgreSQL Database Migrations & Seeds
+│   │   ├── 01_amcet_schema_separation.sql        # Baseline DDL establishing bus_tracking schema & tables
+│   │   ├── 04_remove_route_code_migration.sql    # Clean-up migration removing deprecated route_code
+│   │   ├── 06_alter_stop_id_type.sql             # Alters student stop_id to text for high-precision IDs
+│   │   ├── 07_ensure_and_backfill_students_route_name.sql # Adds and backfills persistent route_name
+│   │   ├── 08_ensure_and_backfill_students_stop_name.sql  # Adds and backfills persistent stop_name
+│   │   ├── bus_routes_rows.sql                   # Seed dataset for 12 AMCET bus routes and stops
+│   │   ├── buses_rows.sql                        # Seed dataset for fleet vehicles and driver details
+│   │   ├── gps_telemetry_rows.sql                # Initial telemetry seed
+│   │   └── students_rows.sql                     # Production student roster seed dataset
+│   │
+│   ├── tests/                                    # Automated Jest & Supertest Suite
+│   │   ├── auth.test.js                          # Security tests: JWT verification, token expiry, schemas
+│   │   └── postman_auth_security_collection.json # Automated Postman test collection
+│   │
+│   └── utils/                                    # Shared Helpers & Utilities
+│       ├── email.js                              # Brevo HTTP REST API integration for AM-XXXX keys
+│       ├── httpClient.js                         # HTTP client configured with retry logic
+│       ├── realtimeState.js                      # In-memory circular buffer for high-frequency GPS logs
+│       ├── responseHelper.js                     # Standardized success/error JSON response builder
+│       └── sendEmail.js                          # Email dispatch helper module
+│
+└── frontend/bus-admin/                           # React 18 + Vite Administration Portal
+    ├── .env                                      # Active frontend environment variables (git-ignored)
+    ├── .env.example                              # Template for frontend environment variables
+    ├── index.html                                # HTML5 single-page application entry point
+    ├── vite.config.js                            # Vite bundler configuration (port 8000, alias resolution)
+    ├── package.json                              # Frontend dependencies (React 18, Lucide, Leaflet)
+    │
+    └── src/
+        ├── App.css                               # Root application layout, navigation drawer styles
+        ├── App.jsx                               # Top-level shell navigation, auth sync, and route definitions
+        ├── index.css                             # Global typography, color tokens, and design variables
+        ├── main.jsx                              # Application mount point wrapped with ToastProvider
+        │
+        ├── components/                           # Modular UI Components
+        │   ├── BusInfoCard.jsx                   # Selected bus telemetry & driver profile card
+        │   ├── BusList.jsx                       # Tabular fleet status overview list
+        │   ├── BusRow.jsx                        # Single vehicle row item with quick action buttons
+        │   ├── ErrorBoundary.jsx                 # UI error boundary fallback interceptor
+        │   ├── LogoutModal.jsx                   # Accessible sign-out confirmation dialog
+        │   ├── MapView.jsx                       # Leaflet map container displaying real-time bus markers
+        │   ├── Skeletons.jsx                     # Shimmer skeleton loaders for smooth loading
+        │   ├── TrackLocationView.jsx             # Dedicated live vehicle tracking panel with telemetry
+        │   ├── ViewStopsModal.css                # Stylesheet for route stops visualizer
+        │   └── ViewStopsModal.jsx                # Sequenced stops viewer with order badges
+        │
+        ├── context/                              # Shared React Context
+        │   └── ToastContext.jsx                  # Context provider managing animated toast notifications
+        │
+        ├── hooks/                                # Custom React Hooks
+        │   ├── useDataCache.js                   # In-memory SWR caching and 220ms search debouncing
+        │   ├── useModalFocusTrap.js              # Accessible modal focus trapping & Escape key listener
+        │   └── useSocketBus.js                   # Socket.IO client hook managing live coordinate updates
+        │
+        ├── lib/                                  # API Clients & Service Integrations
+        │   ├── apiClient.js                      # Centralized API client with automatic token attachment
+        │   ├── studentService.js                 # Student normalization, mapping, and API endpoints
+        │   └── supabaseClient.js                 # Supabase client factory for admin session management
+        │
+        └── pages/                                # Dashboard Route Views
+            ├── BusesPage.jsx                     # Fleet bus management, driver assignment & CRUD
+            ├── Dashboard.css                     # Grid styles and metric KPI card layouts
+            ├── Dashboard.jsx                     # Primary analytics overview with map and fleet counters
+            ├── login.jsx                         # Admin authentication form
+            ├── Profile.jsx                       # Admin profile details and password manager
+            ├── RoutesPage.jsx                    # Route builder & stop sequence editor
+            ├── Students.css                      # Student table styling, sync bar, and modal forms
+            └── StudentsPage.jsx                  # Event-driven student roster, search, CSV import & edit
+```
+
+---
+
+## 6. Installation & Local Development
+
+### Prerequisites
+- **Node.js**: `v18.0.0` or higher (`v20+` recommended)
+- **npm**: `v9.0.0` or higher
+- **PostgreSQL / Supabase**: Active Supabase project with database privileges
+
+---
+
+### Environment Variables Setup
+
+#### 1. Backend (`backend/.env`):
 ```ini
-# Server Settings
 PORT=3001
 NODE_ENV=development
-FRONTEND_URL=http://localhost:8000,http://localhost:5173
+FRONTEND_URL=http://localhost:8000,http://localhost:3000
 
-# Supabase Credentials
+# Supabase Credentials (from Supabase Dashboard -> Settings -> API)
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOi...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
+SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 
-# SkyNav GPS Provider (Optional for local dev, mandatory in production)
-SKYNAV_API_URL=https://api.skynavgps.com/v2
-SKYNAV_BEARER_TOKEN=your_skynav_token
-SKYNAV_USERNAME=your_username
-SKYNAV_PASSWORD=your_password
-SKYNAV_PROJECT_ID=your_project_id
-SKYNAV_COMPANY_NAME=AMCET
-SKYNAV_POLL_INTERVAL_MS=30000
+# SkyNav GPS Configuration (Optional for mock testing)
+SKYNAV_API_URL=https://api.skynav.in/v1
+SKYNAV_USERNAME=your-username
+SKYNAV_PASSWORD=your-password
+SKYNAV_PROJECT_ID=37
+GPS_POLL_INTERVAL_MS=80000
 
-# Brevo HTTP REST API Credentials (Student Activation & Password Resets)
-BREVO_API_KEY=your_brevo_api_key_here
-SENDER_EMAIL=your-verified-sender@example.com
-SENDER_NAME=AMCET Transport
+# Brevo Transactional Email (Optional for student activation keys)
+BREVO_API_KEY=your-brevo-api-key
+SENDER_EMAIL=transport@amcet.in
+SENDER_NAME="AMCET Transport"
+```
+
+#### 2. Frontend (`frontend/bus-admin/.env`):
+```ini
+# Backend API Base URL (no trailing slash)
+VITE_API_URL=http://localhost:3001
+
+# Supabase Public Keys for Admin Auth
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
 ---
 
-## 7. Setup & Local Development
+### Running Backend & Frontend
 
-### 1. Install Dependencies
 ```bash
-cd web/backend
+# 1. Start the Express API Backend
+cd backend
 npm install
-```
-
-### 2. Verify Database Connection
-```bash
-node diagnose_supabase.js
-```
-
-### 3. Start Server in Development Mode
-```bash
 npm run dev
-# OR for standard production node start:
-npm start
+
+# 2. In a separate terminal, start the React Admin Portal
+cd frontend/bus-admin
+npm install
+npm run dev
 ```
-The server will boot on port `3001` (or your configured `PORT`), attach Socket.IO, verify Brevo REST API service, and initiate the GPS scheduler.
+
+- **Backend API**: `http://localhost:3001`
+- **Frontend Dashboard**: `http://localhost:8000`
 
 ---
 
-## 8. Diagnostic & Testing Scripts
+### Running Test Suite
 
-The repository includes standalone diagnostic utilities that run without launching the full server:
+```bash
+cd backend
+npm test
+```
 
-| Script | Purpose | Command |
-| :--- | :--- | :--- |
-| **`diagnose_supabase.js`** | Probes all core tables (`buses`, `students`, `bus_routes`, etc.) in the `bus_tracking` schema. | `node diagnose_supabase.js` |
-| **`test-supabase.js`** | Quick sanity test confirming DB query execution and HTTP status. | `node test-supabase.js` |
-| **`test-skynav.js`** | Tests network authentication and telemetry packet responses from the SkyNav GPS provider. | `node test-skynav.js` |
-| **`tracker.js`** | Simulates a live bus transmitting coordinate updates to the local API every 5 seconds. | `node tracker.js` |
+Runs Jest and Supertest suites covering JWT authentication, permissive development access, token invalidation, and schema isolation.
+
+---
+
+## 7. Maintainers & License
+
+Developed for **Annai Mira College of Engineering and Technology (AMCET)**.  
+Maintained by the **ADIC (AMCET Digital Innovation Cell)**. All rights reserved.

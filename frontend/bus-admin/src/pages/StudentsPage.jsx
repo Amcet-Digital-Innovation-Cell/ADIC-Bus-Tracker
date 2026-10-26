@@ -26,19 +26,26 @@ import {
   Calendar,
   Save,
   Bus,
+  MapPin,
   AlertCircle,
   XCircle,
   Download,
 } from 'lucide-react';
 import { studentService, ACADEMIC_YEARS, mapYearToDb, mapDbToDisplayYear } from '../lib/studentService';
 import apiClient from '../lib/apiClient';
+import supabase from '../lib/supabaseClient';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { useDebounce, apiCache } from '../hooks/useDataCache';
+import { useToast } from '../context/ToastContext';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { TableSkeleton } from '../components/Skeletons';
 import './Students.css';
 
 function StudentsPageContent() {
   // ── Main Data & Loading States ──────────────────────────────────────────
   const [students, setStudents] = useState([]);
   const [availableRoutes, setAvailableRoutes] = useState([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,8 +74,13 @@ function StudentsPageContent() {
     email: '',
     parent_name: '',
     parent_phone: '',
+    route_id: '',
+    stop_id: '',
+    stop_name: '',
     route_name: '',
   });
+  const [editRouteStops, setEditRouteStops] = useState([]);
+  const [editLoadingStops, setEditLoadingStops] = useState(false);
   const [editErrors, setEditErrors] = useState({});
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -76,8 +88,20 @@ function StudentsPageContent() {
   const [singleForm, setSingleForm] = useState({
     student_id: '',
     student_name: '',
+    academic_year: '1st Year',
     year: '1st Year',
+    department: '',
+    student_mobile: '',
+    student_email: '',
+    parent_name: '',
+    parent_phone: '',
+    route_id: '',
+    route_name: '',
+    stop_id: '',
+    stop_name: '',
   });
+  const [routeStops, setRouteStops] = useState([]);
+  const [loadingStops, setLoadingStops] = useState(false);
   const [singleErrors, setSingleErrors] = useState({});
   const [singleSubmitting, setSingleSubmitting] = useState(false);
 
@@ -94,8 +118,20 @@ function StudentsPageContent() {
     setSingleForm({
       student_id: '',
       student_name: '',
+      academic_year: '1st Year',
       year: '1st Year',
+      department: '',
+      student_mobile: '',
+      student_email: '',
+      parent_name: '',
+      parent_phone: '',
+      route_id: '',
+      route_name: '',
+      stop_id: '',
+      stop_name: '',
     });
+    setRouteStops([]);
+    setLoadingStops(false);
     setSingleErrors({});
     setBulkText('');
     setBulkParsed([]);
@@ -106,12 +142,45 @@ function StudentsPageContent() {
     }
   }, []);
 
-  const handleOpenAddModal = useCallback((tab = 'single') => {
+  // ── Dedicated Route Fetcher with In-Memory Caching ───────────────────────
+  const fetchAvailableRoutes = useCallback(async () => {
+    const cached = apiCache.get('routes_all');
+    if (cached?.data && Array.isArray(cached.data) && cached.data.length > 0) {
+      setAvailableRoutes(cached.data);
+      return cached.data;
+    }
+    setLoadingRoutes(true);
+    try {
+      const res = await apiClient.get('/api/routes');
+      const rList = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.routes)
+          ? res.routes
+          : Array.isArray(res?.data)
+            ? res.data
+            : [];
+      if (rList.length > 0) {
+        setAvailableRoutes(rList);
+        apiCache.set('routes_all', rList, 180000); // 3 minutes TTL
+      }
+      return rList;
+    } catch (err) {
+      console.warn('[StudentsPage] Failed to fetch available routes:', err.message);
+      return [];
+    } finally {
+      setLoadingRoutes(false);
+    }
+  }, []);
+
+  const handleOpenAddModal = useCallback(async (tab = 'single') => {
     resetAddModalForms();
     setActiveTab(tab);
     setDuplicateConfirmModal(null);
     setIsAddModalOpen(true);
-  }, [resetAddModalForms]);
+    if (!availableRoutes || availableRoutes.length === 0) {
+      fetchAvailableRoutes();
+    }
+  }, [resetAddModalForms, availableRoutes, fetchAvailableRoutes]);
 
   const handleCloseAddModal = useCallback(() => {
     if (singleSubmitting || bulkSubmitting) return;
@@ -120,20 +189,87 @@ function StudentsPageContent() {
     resetAddModalForms();
   }, [singleSubmitting, bulkSubmitting, resetAddModalForms]);
 
-  // ── Toast Notifications ─────────────────────────────────────────────────
-  const [toast, setToast] = useState(null);
+  // ── Global Toast Notifications from Context ─────────────────────────────
+  const { toast, showToast } = useToast();
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 3500);
-  };
+  // ── Debounced Search Query for 60fps Filter Responsiveness ───────────────
+  const debouncedSearchQuery = useDebounce(searchQuery, 220);
 
-  // ── Data Fetching ───────────────────────────────────────────────────────
-  const loadStudents = useCallback(async (isManualRefresh = false) => {
-    if (isManualRefresh) setRefreshing(true);
-    else setLoading(true);
+  // ── Instant Synchronous Stops Extraction from In-Memory Routes ───────────
+  const extractStopsFromRouteId = useCallback((routeId) => {
+    if (!routeId) return [];
+    const matched = availableRoutes.find((r) => String(r.id) === String(routeId));
+    if (!matched) return [];
+    let stops = matched.stops;
+    if (typeof stops === 'string') {
+      try { stops = JSON.parse(stops); } catch (_) { stops = []; }
+    }
+    return Array.isArray(stops) ? stops : [];
+  }, [availableRoutes]);
+
+  // ── Fast Structural Equality Comparator for Students ──────────────────────
+  // Prevents table re-renders and eliminates layout shifts/flickering
+  const areStudentListsEqual = useCallback((prevList, nextList) => {
+    if (!Array.isArray(prevList) || !Array.isArray(nextList)) return false;
+    if (prevList.length !== nextList.length) return false;
+    for (let i = 0; i < prevList.length; i++) {
+      const a = prevList[i];
+      const b = nextList[i];
+      if (!a || !b) return false;
+      if (
+        (a.id || a.student_id) !== (b.id || b.student_id) ||
+        a.student_id !== b.student_id ||
+        (a.student_name || a.name) !== (b.student_name || b.name) ||
+        a.email !== b.email ||
+        a.year !== b.year ||
+        a.academic_year !== b.academic_year ||
+        a.department !== b.department ||
+        a.student_mobile !== b.student_mobile ||
+        a.parent_name !== b.parent_name ||
+        a.parent_phone !== b.parent_phone ||
+        a.route_id !== b.route_id ||
+        a.route_name !== b.route_name ||
+        a.stop_id !== b.stop_id ||
+        a.stop_name !== b.stop_name ||
+        a.boarding_stop !== b.boarding_stop ||
+        Boolean(a.is_registered) !== Boolean(b.is_registered) ||
+        a.registration_status !== b.registration_status ||
+        a.activation_key !== b.activation_key ||
+        a.bus_number !== b.bus_number ||
+        a.updated_at !== b.updated_at
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, []);
+
+  // ── Data Fetching with In-Memory SWR Caching & Non-Destructive Sync ───────
+  const loadStudents = useCallback(async (options = {}) => {
+    const isManualRefresh = typeof options === 'boolean' ? options : Boolean(options?.isManual);
+    const isSilent = Boolean(options?.isSilent);
+    const force = Boolean(options?.force);
+
+    // 1. If cache exists and this is not a manual or forced refresh, use cached data immediately
+    const cachedStudents = apiCache.get('students_all');
+    const cachedRoutes = apiCache.get('routes_all');
+
+    if (!isManualRefresh && !force && cachedStudents?.data && cachedRoutes?.data) {
+      setStudents((prev) => (areStudentListsEqual(prev, cachedStudents.data) ? prev : cachedStudents.data));
+      setAvailableRoutes(cachedRoutes.data);
+      setLoading(false);
+      // Background revalidate if stale
+      if (Date.now() < cachedStudents.expiresAt) {
+        return;
+      }
+    }
+
+    // Only spin the manual Refresh button when the user explicitly clicks it
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else if (!cachedStudents?.data && !isSilent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -143,7 +279,9 @@ function StudentsPageContent() {
       ]);
 
       if (data.status === 'fulfilled') {
-        setStudents(Array.isArray(data.value) ? data.value : []);
+        const stdList = Array.isArray(data.value) ? data.value : [];
+        setStudents((prev) => (areStudentListsEqual(prev, stdList) ? prev : stdList));
+        apiCache.set('students_all', stdList, 60000); // 1 minute TTL
       } else {
         throw data.reason;
       }
@@ -152,11 +290,12 @@ function StudentsPageContent() {
         const rList = Array.isArray(routesRes.value)
           ? routesRes.value
           : Array.isArray(routesRes.value?.routes)
-          ? routesRes.value.routes
-          : Array.isArray(routesRes.value?.data)
-          ? routesRes.value.data
-          : [];
+            ? routesRes.value.routes
+            : Array.isArray(routesRes.value?.data)
+              ? routesRes.value.data
+              : [];
         setAvailableRoutes(rList);
+        apiCache.set('routes_all', rList, 120000); // 2 minutes TTL
       }
 
       if (isManualRefresh) {
@@ -164,26 +303,79 @@ function StudentsPageContent() {
       }
     } catch (err) {
       console.error('[StudentsPage] Failed to load students:', err);
-      setError(err?.message || 'Failed to load students from server.');
-      setStudents([]);
+      setStudents((prev) => {
+        // Never wipe out existing student roster if a background sync fails
+        if (!prev || prev.length === 0) {
+          setError(err?.message || 'Failed to load students from server.');
+          return [];
+        }
+        return prev;
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [showToast, areStudentListsEqual]);
 
+  // ── Event-Driven Realtime Auto-Sync (Only Runs When Data Updates) ─────────
   useEffect(() => {
+    // 1. Initial Load on page mount
     loadStudents();
+
+    // 2. Debounced silent revalidator triggered ONLY when a database change event arrives
+    let debounceTimer = null;
+    const triggerSilentSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        // Refreshes data silently in background WITHOUT spinning the manual button or flashing UI
+        loadStudents({ isSilent: true, force: true });
+      }, 350);
+    };
+
+    // 3. Supabase Realtime channel — fires strictly when students table experiences an INSERT, UPDATE, or DELETE
+    let channel = null;
+    if (typeof supabase?.channel === 'function') {
+      try {
+        channel = supabase
+          .channel('students-auto-sync')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'bus_tracking', table: 'students' },
+            (payload) => {
+              console.log('[Realtime] Data change event received:', payload.eventType);
+              triggerSilentSync();
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'students' },
+            (payload) => {
+              console.log('[Realtime] Data change event received (public):', payload.eventType);
+              triggerSilentSync();
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn('[StudentsPage] Realtime subscription init warning:', err);
+      }
+    }
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (channel && typeof supabase?.removeChannel === 'function') {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [loadStudents]);
 
-  // ── Filter & Search Logic ──────────────────────────────────────────────
+  // ── Filter & Search Logic (Debounced) ──────────────────────────────────
   const filteredStudents = useMemo(() => {
     if (!Array.isArray(students)) return [];
     return students.filter((std) => {
       if (!std) return false;
 
-      // Search by ID, Name, Department, or Email
-      const q = searchQuery.toLowerCase().trim();
+      // Search by ID, Name, Department, or Email with debounced query
+      const q = debouncedSearchQuery.toLowerCase().trim();
       if (q) {
         const matchesId = (std.student_id || '').toLowerCase().includes(q);
         const matchesName = (std.student_name || std.name || '').toLowerCase().includes(q);
@@ -207,7 +399,7 @@ function StudentsPageContent() {
 
       return true;
     });
-  }, [students, searchQuery, selectedYear, selectedStatus]);
+  }, [students, debouncedSearchQuery, selectedYear, selectedStatus]);
 
   // ── KPI Metrics Calculations ───────────────────────────────────────────
   const metrics = useMemo(() => {
@@ -252,7 +444,7 @@ function StudentsPageContent() {
 
   const validateSingleForm = () => {
     const errors = {};
-    const cleanId = singleForm.student_id.trim().toUpperCase();
+    const cleanId = (singleForm.student_id || '').trim().toUpperCase();
     if (!cleanId) {
       errors.student_id = 'Student ID (Roll / Reg. No) is required';
     } else {
@@ -266,11 +458,64 @@ function StudentsPageContent() {
     if (!(singleForm.student_name || '').trim()) {
       errors.student_name = 'Student Name is required';
     }
-    if (!singleForm.year.trim()) {
-      errors.year = 'Academic Year is required';
+    const chosenYear = (singleForm.academic_year || singleForm.year || '').trim();
+    if (!chosenYear) {
+      errors.academic_year = 'Academic Year is required';
+    }
+    if (singleForm.student_email && singleForm.student_email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(singleForm.student_email.trim())) {
+        errors.student_email = 'Invalid email address format';
+      }
     }
     setSingleErrors(errors);
     return Object.keys(errors).length === 0;
+  };
+
+  const handleRouteChange = async (e) => {
+    const selectedRouteId = e.target.value;
+    const selectedRouteObj = availableRoutes.find((r) => String(r.id) === String(selectedRouteId));
+    setSingleForm((prev) => ({
+      ...prev,
+      route_id: selectedRouteId,
+      route_name: selectedRouteObj?.route_name || '',
+      stop_id: '',
+      stop_name: '',
+    }));
+
+    if (!selectedRouteId) {
+      setRouteStops([]);
+      return;
+    }
+
+    // 1. Instantly check memory
+    const syncStops = extractStopsFromRouteId(selectedRouteId);
+    if (syncStops.length > 0) {
+      setRouteStops(syncStops);
+      return;
+    }
+
+    // 2. Fallback to API if not found in memory
+    setLoadingStops(true);
+    try {
+      const stops = await studentService.fetchRouteStops(selectedRouteId);
+      setRouteStops(stops);
+    } catch (err) {
+      console.warn('[StudentsPage] Dynamic stops fetch failed:', err);
+      setRouteStops([]);
+    } finally {
+      setLoadingStops(false);
+    }
+  };
+
+  const handleSingleStopChange = (e) => {
+    const selectedStopId = e.target.value;
+    const selectedStopObj = routeStops.find((st) => String(st.id) === String(selectedStopId));
+    setSingleForm((prev) => ({
+      ...prev,
+      stop_id: selectedStopId,
+      stop_name: selectedStopObj?.stop_name || '',
+    }));
   };
 
   const handleSingleSubmit = async (e) => {
@@ -279,18 +524,37 @@ function StudentsPageContent() {
 
     setSingleSubmitting(true);
     try {
-      const cleanId = singleForm.student_id.trim().toUpperCase();
-      const cleanName = singleForm.student_name.trim();
-      const mappedDbYear = mapYearToDb(singleForm.year);
+      const cleanId = (singleForm.student_id || '').trim().toUpperCase();
+      const cleanName = (singleForm.student_name || '').trim();
+      const chosenYear = singleForm.academic_year || singleForm.year || '1st Year';
+      const mappedDbYear = mapYearToDb(chosenYear);
 
-      const added = await studentService.addStudent({
+      const payload = {
         student_id: cleanId,
         student_name: cleanName,
-        year: mappedDbYear,
         academic_year: mappedDbYear,
-      });
+        year: mappedDbYear,
+        department: (singleForm.department || '').trim() || null,
+        student_mobile: (singleForm.student_mobile || '').trim() || null,
+        student_email: (singleForm.student_email || '').trim().toLowerCase() || null,
+        email: (singleForm.student_email || '').trim().toLowerCase() || null,
+        parent_name: (singleForm.parent_name || '').trim() || null,
+        parent_phone: (singleForm.parent_phone || '').trim() || null,
+        route_id: singleForm.route_id ? parseInt(singleForm.route_id, 10) : null,
+        route_name: (singleForm.route_name || '').trim() || null,
+        stop_id: singleForm.stop_id ? singleForm.stop_id : null,
+        stop_name: (singleForm.stop_name || '').trim() || null,
+      };
 
-      setStudents((prev) => [added, ...prev]);
+      const added = await studentService.addStudent(payload);
+
+      apiCache.invalidate('students_all');
+      setStudents((prev) => {
+        const next = [added, ...prev.filter((s) => s.student_id !== added.student_id && (!s.id || s.id !== added.id))];
+        apiCache.set('students_all', next, 60000);
+        return next;
+      });
+      loadStudents({ isSilent: true, force: true });
       showToast(`Student ${added.student_name || cleanName} added successfully!`, 'success');
       handleCloseAddModal();
     } catch (err) {
@@ -312,9 +576,58 @@ function StudentsPageContent() {
     }
   };
 
-  // ── Edit Student Handlers ──────────────────────────────────────────────
-  const handleOpenEditModal = (std) => {
+  // ── Edit Student Handlers (Instant Synchronous Route & Stop Population) ──
+  const handleOpenEditModal = async (std) => {
     setStudentToEdit(std);
+    let currentRoutes = availableRoutes;
+    if (!currentRoutes || currentRoutes.length === 0) {
+      currentRoutes = await fetchAvailableRoutes();
+    }
+
+    let rId = std.route_id ? String(std.route_id) : '';
+    const rName = std.route_name || '';
+
+    // If rId is missing but route_name is present, resolve ID from routes list
+    if (!rId && rName && Array.isArray(currentRoutes) && currentRoutes.length > 0) {
+      const matched = currentRoutes.find(
+        (r) => (r.route_name || '').trim().toLowerCase() === rName.trim().toLowerCase()
+      );
+      if (matched) {
+        rId = String(matched.id);
+      }
+    }
+
+    const sId = std.stop_id !== undefined && std.stop_id !== null ? String(std.stop_id) : '';
+    const sName = std.stop_name || std.boarding_stop || '';
+
+    // Synchronously extract stops or fetch from route
+    if (rId) {
+      let syncStops = [];
+      const matchedRoute = (currentRoutes || []).find((r) => String(r.id) === String(rId));
+      if (matchedRoute) {
+        let stops = matchedRoute.stops;
+        if (typeof stops === 'string') {
+          try { stops = JSON.parse(stops); } catch (_) { stops = []; }
+        }
+        syncStops = Array.isArray(stops) ? stops : [];
+      }
+
+      if (syncStops.length > 0) {
+        setEditRouteStops(syncStops);
+      } else {
+        setEditLoadingStops(true);
+        studentService.fetchRouteStops(rId).then((stops) => {
+          setEditRouteStops(stops || []);
+        }).catch(() => {
+          setEditRouteStops([]);
+        }).finally(() => {
+          setEditLoadingStops(false);
+        });
+      }
+    } else {
+      setEditRouteStops([]);
+    }
+
     setEditForm({
       student_id: std.student_id || '',
       student_name: std.student_name || std.name || '',
@@ -324,9 +637,59 @@ function StudentsPageContent() {
       email: std.email || '',
       parent_name: std.parent_name || '',
       parent_phone: std.parent_phone || '',
-      route_name: std.route_name || '',
+      route_id: rId,
+      stop_id: sId,
+      stop_name: sName,
+      route_name: rName,
     });
     setEditErrors({});
+  };
+
+  const handleEditRouteChange = async (e) => {
+    const selectedRouteId = e.target.value;
+    const selectedRouteObj = availableRoutes.find((r) => String(r.id) === String(selectedRouteId));
+
+    setEditForm((prev) => ({
+      ...prev,
+      route_id: selectedRouteId,
+      stop_id: '',
+      stop_name: '',
+      route_name: selectedRouteObj?.route_name || '',
+    }));
+
+    if (!selectedRouteId) {
+      setEditRouteStops([]);
+      return;
+    }
+
+    // 1. Instantly check memory
+    const syncStops = extractStopsFromRouteId(selectedRouteId);
+    if (syncStops.length > 0) {
+      setEditRouteStops(syncStops);
+      return;
+    }
+
+    // 2. Fallback to API if not found in memory
+    setEditLoadingStops(true);
+    try {
+      const stops = await studentService.fetchRouteStops(selectedRouteId);
+      setEditRouteStops(stops);
+    } catch (err) {
+      console.warn('[StudentsPage] Dynamic edit stops fetch failed:', err);
+      setEditRouteStops([]);
+    } finally {
+      setEditLoadingStops(false);
+    }
+  };
+
+  const handleEditStopChange = (e) => {
+    const selectedStopId = e.target.value;
+    const selectedStopObj = editRouteStops.find((st) => String(st.id) === String(selectedStopId));
+    setEditForm((prev) => ({
+      ...prev,
+      stop_id: selectedStopId,
+      stop_name: selectedStopObj?.stop_name || '',
+    }));
   };
 
   const handleCloseEditModal = () => {
@@ -363,15 +726,20 @@ function StudentsPageContent() {
       const targetId = studentToEdit.id || studentToEdit.student_id;
       const updated = await studentService.updateStudent(targetId, editForm);
 
-      // Update state in local student list
-      setStudents((prev) =>
-        prev.map((s) => ((s.id && s.id === updated.id) || s.student_id === updated.student_id ? updated : s))
-      );
+      apiCache.invalidate('students_all');
+      // Update state in local student list and cache
+      setStudents((prev) => {
+        const next = prev.map((s) => ((s.id && s.id === updated.id) || s.student_id === updated.student_id ? updated : s));
+        apiCache.set('students_all', next, 60000);
+        return next;
+      });
 
       // If viewing this student in View modal, update view as well
       if (studentToView && (studentToView.id === updated.id || studentToView.student_id === updated.student_id)) {
         setStudentToView(updated);
       }
+
+      loadStudents({ isSilent: true, force: true });
 
       showToast(`Student ${updated.student_name} updated successfully!`, 'success');
       setStudentToEdit(null);
@@ -574,7 +942,8 @@ function StudentsPageContent() {
         showToast(`Imported ${importedCount} student(s) successfully!`, 'success');
       }
 
-      await loadStudents();
+      apiCache.invalidate('students_all');
+      await loadStudents({ isSilent: true, force: true });
       handleCloseAddModal();
     } catch (err) {
       console.error('[StudentsPage] Bulk import error:', err);
@@ -650,7 +1019,9 @@ function StudentsPageContent() {
 
     try {
       await studentService.deleteStudent(deleteId);
+      apiCache.invalidate('students_all');
       setStudents((prev) => prev.filter((s) => s.id !== studentToDelete.id && s.student_id !== studentToDelete.student_id));
+      loadStudents({ isSilent: true, force: true });
       showToast(`Student ${studentToDelete.name || studentToDelete.student_name} removed successfully`, 'warning');
       setStudentToDelete(null);
     } catch (err) {
@@ -672,6 +1043,12 @@ function StudentsPageContent() {
     return name.slice(0, 2).toUpperCase();
   };
 
+  // ── Accessible Focus Traps & Escape Key Listeners for Modals ───────────
+  const addModalRef = useModalFocusTrap(isAddModalOpen, handleCloseAddModal);
+  const editModalRef = useModalFocusTrap(Boolean(studentToEdit), handleCloseEditModal);
+  const viewModalRef = useModalFocusTrap(Boolean(studentToView), () => setStudentToView(null));
+  const deleteModalRef = useModalFocusTrap(Boolean(studentToDelete), () => !deleting && setStudentToDelete(null));
+
   return (
     <div className="students-page">
       {/* ── 1. Top Header Strip ────────────────────────────────────── */}
@@ -687,7 +1064,7 @@ function StudentsPageContent() {
           <button
             id="refresh-students-btn"
             className="btn-refresh"
-            onClick={() => loadStudents(true)}
+            onClick={() => loadStudents({ isManual: true, force: true })}
             disabled={loading || refreshing}
             title="Refresh student list"
           >
@@ -817,17 +1194,35 @@ function StudentsPageContent() {
 
       {/* ── 4. Main Student Table ────────────────────────────────────── */}
       <div className="students-table-card">
-        {loading ? (
-          <div className="students-loading-state">
-            <RefreshCw size={32} className="spin-animation" style={{ color: 'var(--color-blue)' }} />
-            <p>Loading pre-loaded student directory...</p>
+        {refreshing && (
+          <div className="table-sync-bar" role="progressbar" aria-label="Syncing student data">
+            <div className="table-sync-bar__indeterminate" />
+          </div>
+        )}
+
+        {loading && students.length === 0 ? (
+          <div className="table-responsive">
+            <table className="students-table" id="students-roster-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '15%' }}>Student ID</th>
+                  <th style={{ width: '25%' }}>Student Profile</th>
+                  <th style={{ width: '9%' }}>Year</th>
+                  <th style={{ width: '17%' }}>Assigned Route</th>
+                  <th style={{ width: '16%' }}>Assigned Stop</th>
+                  <th style={{ width: '10%' }}>Status</th>
+                  <th style={{ width: '8%', textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <TableSkeleton rows={8} cols={7} />
+            </table>
           </div>
         ) : error ? (
           <div className="students-error-state">
             <AlertTriangle size={36} color="#e53e3e" />
             <p className="error-title">Unable to fetch students</p>
             <p className="error-msg">{error}</p>
-            <button className="btn-retry" onClick={() => loadStudents()}>
+            <button className="btn-retry" onClick={() => loadStudents({ force: true })}>
               Try Again
             </button>
           </div>
@@ -858,12 +1253,13 @@ function StudentsPageContent() {
             <table className="students-table" id="students-roster-table">
               <thead>
                 <tr>
-                  <th style={{ width: '16%' }}>Student ID</th>
-                  <th style={{ width: '28%' }}>Student Profile</th>
-                  <th style={{ width: '12%' }}>Year</th>
-                  <th style={{ width: '18%' }}>Assigned Route</th>
-                  <th style={{ width: '14%' }}>Status</th>
-                  <th style={{ width: '12%', textAlign: 'center' }}>Action</th>
+                  <th style={{ width: '15%' }}>Student ID</th>
+                  <th style={{ width: '25%' }}>Student Profile</th>
+                  <th style={{ width: '9%' }}>Year</th>
+                  <th style={{ width: '17%' }}>Assigned Route</th>
+                  <th style={{ width: '16%' }}>Assigned Stop</th>
+                  <th style={{ width: '10%' }}>Status</th>
+                  <th style={{ width: '8%', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -937,6 +1333,25 @@ function StudentsPageContent() {
                           </div>
                         ) : (
                           <span className="student-no-route">— None —</span>
+                        )}
+                      </td>
+
+                      {/* 5. Assigned Stop */}
+                      <td>
+                        {std.stop_name || std.boarding_stop ? (
+                          <div className="student-stop-cell">
+                            <span className="student-stop-tag" title={`Assigned Stop: ${std.stop_name || std.boarding_stop}`}>
+                              <MapPin size={12} className="student-stop-icon" />
+                              <span>{std.stop_name || std.boarding_stop}</span>
+                            </span>
+                            {std.stop_id && (
+                              <span className="student-stop-id-subtext" title={`Stop ID: ${std.stop_id}`}>
+                                ID: {std.stop_id}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="student-no-stop">— None —</span>
                         )}
                       </td>
 
@@ -1024,7 +1439,7 @@ function StudentsPageContent() {
       {/* ── 5. View Student Details Modal ───────────────────────────── */}
       {studentToView && (
         <div className="modal-overlay" onClick={() => setStudentToView(null)}>
-          <div className="modal-dialog modal-dialog--profile" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-dialog modal-dialog--profile" ref={viewModalRef} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-header__title">
                 <h2>Student Profile Details</h2>
@@ -1194,9 +1609,11 @@ function StudentsPageContent() {
                             <Bus size={12} /> Bus {studentToView.bus_number}
                           </span>
                         )}
-                        {studentToView.boarding_stop && (
+                        {(studentToView.stop_name || studentToView.boarding_stop) && (
                           <span className="stop-name-highlight">
-                            Boarding: {studentToView.boarding_stop}
+                            <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                            Stop: {studentToView.stop_name || studentToView.boarding_stop}
+                            {studentToView.stop_id && ` (ID: ${studentToView.stop_id})`}
                           </span>
                         )}
                       </div>
@@ -1250,7 +1667,7 @@ function StudentsPageContent() {
       {/* ── 6. Edit Student Modal ───────────────────────────────────── */}
       {studentToEdit && (
         <div className="modal-overlay" onClick={handleCloseEditModal}>
-          <div className="modal-dialog modal-dialog--md" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-dialog modal-dialog--lg" ref={editModalRef} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-header__title">
                 <h2>Edit Student Profile</h2>
@@ -1418,33 +1835,62 @@ function StudentsPageContent() {
                   </div>
                 </div>
 
-                {/* 9. Assigned Route Name */}
+                {/* 9. Assigned Route & Stop */}
                 <div className="form-group" style={{ marginTop: '6px' }}>
-                  <label className="form-label" htmlFor="edit-route-name">
-                    Assigned Route Name
+                  <label className="form-label" htmlFor="edit-student-route">
+                    <RouteIcon size={14} className="form-label-icon" /> Assigned Bus Route
                   </label>
-                  <div className="route-select-wrapper">
-                    <input
-                      id="edit-route-name"
-                      type="text"
-                      list="available-routes-datalist"
-                      className="form-input"
-                      value={editForm.route_name}
-                      onChange={(e) => setEditForm((prev) => ({ ...prev, route_name: e.target.value }))}
-                      placeholder="Select or enter route name (e.g. POLLACHI TO AMCET)"
-                      disabled={editSubmitting}
-                    />
-                    <datalist id="available-routes-datalist">
-                      {availableRoutes.map((r) => (
-                        <option key={r.id || r.route_name} value={r.route_name}>
-                          {r.route_name} {r.origin ? `(${r.origin} → ${r.destination || ''})` : ''}
-                        </option>
-                      ))}
-                    </datalist>
-                  </div>
-                  <span className="form-hint">
-                    Choose from available transport routes or enter an assigned route name.
-                  </span>
+                  <select
+                    id="edit-student-route"
+                    className="form-select"
+                    value={editForm.route_id ? String(editForm.route_id) : ''}
+                    onChange={handleEditRouteChange}
+                    onFocus={() => {
+                      if (!availableRoutes || availableRoutes.length === 0) fetchAvailableRoutes();
+                    }}
+                    disabled={editSubmitting || loadingRoutes}
+                  >
+                    <option value="">
+                      {loadingRoutes
+                        ? '⏳ Loading available routes...'
+                        : availableRoutes.length === 0
+                        ? '— No routes available (Click to load) —'
+                        : '— Select Bus Route (Optional) —'}
+                    </option>
+                    {availableRoutes.map((rt) => (
+                      <option key={rt.id} value={String(rt.id)}>
+                        {rt.route_name || `Route ${rt.id}`} {rt.origin ? `(${rt.origin} → ${rt.destination || 'AMCET'})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="edit-student-stop">
+                    <MapPin size={14} className="form-label-icon" /> Assigned Bus Stop
+                  </label>
+                  <select
+                    id="edit-student-stop"
+                    className="form-select"
+                    value={editForm.stop_id}
+                    onChange={handleEditStopChange}
+                    disabled={editSubmitting || !editForm.route_id || editLoadingStops}
+                  >
+                    <option value="">
+                      {editLoadingStops
+                        ? '⏳ Loading stops from route JSON...'
+                        : !editForm.route_id
+                          ? '— Select a route first to load stops —'
+                          : editRouteStops.length === 0
+                            ? '— No stops available for this route —'
+                            : '— Select Assigned Bus Stop —'}
+                    </option>
+                    {editRouteStops.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.stop_order ? `#${st.stop_order} ` : ''}{st.stop_name || `Stop ${st.id}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1482,7 +1928,7 @@ function StudentsPageContent() {
       {/* ── 7. Add Student Modal (Manual & Bulk Entry) ──────────────── */}
       {isAddModalOpen && !duplicateConfirmModal && (
         <div className="modal-overlay" onClick={handleCloseAddModal}>
-          <div className="modal-dialog modal-dialog--md" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-dialog modal-dialog--lg" ref={addModalRef} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-header__title">
                 <h2>Add Pre-loaded Students</h2>
@@ -1519,76 +1965,268 @@ function StudentsPageContent() {
 
             {activeTab === 'single' ? (
               <form onSubmit={handleSingleSubmit} className="single-student-form">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="single-student-id">
-                    Student ID <span className="req">*</span>
-                  </label>
-                  <input
-                    id="single-student-id"
-                    type="text"
-                    className={`form-input ${singleErrors.student_id ? 'form-input--error' : ''}`}
-                    placeholder="e.g. 23IT001 or 7376222IT101"
-                    value={singleForm.student_id}
-                    onChange={handleSingleIdChange}
-                    disabled={singleSubmitting}
-                  />
-                  {singleErrors.student_id ? (
-                    <span className="field-error">
-                      <AlertTriangle size={13} />
-                      {singleErrors.student_id}
-                    </span>
-                  ) : (
-                    <span className="field-hint">
-                      Standard College ID card number (Roll / Register number)
-                    </span>
-                  )}
+                {/* ── Section 1: Required Identity & Academic Details ── */}
+                <div className="form-section-header">
+                  <span className="form-section-title">Academic & Student Identity</span>
+                  <span className="form-section-badge form-section-badge--required">Required Fields *</span>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="single-student-name">
-                    Student Full Name <span className="req">*</span>
-                  </label>
-                  <input
-                    id="single-student-name"
-                    type="text"
-                    className={`form-input ${singleErrors.student_name ? 'form-input--error' : ''}`}
-                    placeholder="e.g. Vigneshwaran K"
-                    value={singleForm.student_name}
-                    onChange={(e) => {
-                      setSingleForm((prev) => ({ ...prev, student_name: e.target.value }));
-                      if (singleErrors.student_name) {
-                        setSingleErrors((prev) => ({ ...prev, student_name: '' }));
-                      }
-                    }}
-                    disabled={singleSubmitting}
-                  />
-                  {singleErrors.student_name && (
-                    <span className="field-error">
-                      <AlertTriangle size={13} />
-                      {singleErrors.student_name}
-                    </span>
-                  )}
+                <div className="form-grid-2col">
+                  {/* 1. Student ID (Required) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-id">
+                      Student ID <span className="req">*</span>
+                    </label>
+                    <input
+                      id="single-student-id"
+                      type="text"
+                      className={`form-input ${singleErrors.student_id ? 'form-input--error' : ''}`}
+                      placeholder="e.g. 23IT001 or 7376222IT101"
+                      value={singleForm.student_id}
+                      onChange={handleSingleIdChange}
+                      disabled={singleSubmitting}
+                    />
+                    {singleErrors.student_id ? (
+                      <span className="field-error">
+                        <AlertTriangle size={13} />
+                        {singleErrors.student_id}
+                      </span>
+                    ) : (
+                      <span className="field-hint">
+                        Roll number or university register number
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 2. Full Name (Required) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-name">
+                      Full Name <span className="req">*</span>
+                    </label>
+                    <input
+                      id="single-student-name"
+                      type="text"
+                      className={`form-input ${singleErrors.student_name ? 'form-input--error' : ''}`}
+                      placeholder="e.g. Vigneshwaran K"
+                      value={singleForm.student_name}
+                      onChange={(e) => {
+                        setSingleForm((prev) => ({ ...prev, student_name: e.target.value }));
+                        if (singleErrors.student_name) {
+                          setSingleErrors((prev) => ({ ...prev, student_name: '' }));
+                        }
+                      }}
+                      disabled={singleSubmitting}
+                    />
+                    {singleErrors.student_name && (
+                      <span className="field-error">
+                        <AlertTriangle size={13} />
+                        {singleErrors.student_name}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 3. Academic Year (Required) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-year">
+                      Academic Year <span className="req">*</span>
+                    </label>
+                    <select
+                      id="single-student-year"
+                      className={`form-select ${singleErrors.academic_year ? 'form-input--error' : ''}`}
+                      value={singleForm.academic_year || singleForm.year || '1st Year'}
+                      onChange={(e) => {
+                        setSingleForm((prev) => ({ ...prev, academic_year: e.target.value, year: e.target.value }));
+                        if (singleErrors.academic_year) {
+                          setSingleErrors((prev) => ({ ...prev, academic_year: '' }));
+                        }
+                      }}
+                      disabled={singleSubmitting}
+                    >
+                      {ACADEMIC_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                    {singleErrors.academic_year && (
+                      <span className="field-error">
+                        <AlertTriangle size={13} />
+                        {singleErrors.academic_year}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 4. Department (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-department">
+                      Department <span className="opt-label">(Optional)</span>
+                    </label>
+                    <input
+                      id="single-student-department"
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Information Technology"
+                      value={singleForm.department}
+                      onChange={(e) => setSingleForm((prev) => ({ ...prev, department: e.target.value }))}
+                      disabled={singleSubmitting}
+                    />
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="single-student-year">
-                    Academic Year <span className="req">*</span>
-                  </label>
-                  <select
-                    id="single-student-year"
-                    className="form-select"
-                    value={singleForm.year}
-                    onChange={(e) =>
-                      setSingleForm((prev) => ({ ...prev, year: e.target.value }))
-                    }
-                    disabled={singleSubmitting}
-                  >
-                    {ACADEMIC_YEARS.map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr}
+                {/* ── Section 2: Contact & Guardian Details (Optional) ── */}
+                <div className="form-section-header">
+                  <span className="form-section-title">Contact & Guardian Information</span>
+                  <span className="form-section-badge form-section-badge--optional">Optional</span>
+                </div>
+
+                <div className="form-grid-2col">
+                  {/* 5. Student Mobile Number (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-mobile">
+                      Student Mobile Number <span className="opt-label">(Optional)</span>
+                    </label>
+                    <input
+                      id="single-student-mobile"
+                      type="tel"
+                      className="form-input"
+                      placeholder="e.g. 9876543210"
+                      value={singleForm.student_mobile}
+                      onChange={(e) => setSingleForm((prev) => ({ ...prev, student_mobile: e.target.value }))}
+                      disabled={singleSubmitting}
+                    />
+                  </div>
+
+                  {/* 6. Student Email Address (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-email">
+                      Student Email Address <span className="opt-label">(Optional)</span>
+                    </label>
+                    <input
+                      id="single-student-email"
+                      type="email"
+                      className={`form-input ${singleErrors.student_email ? 'form-input--error' : ''}`}
+                      placeholder="e.g. student@amcet.in"
+                      value={singleForm.student_email}
+                      onChange={(e) => {
+                        setSingleForm((prev) => ({ ...prev, student_email: e.target.value }));
+                        if (singleErrors.student_email) {
+                          setSingleErrors((prev) => ({ ...prev, student_email: '' }));
+                        }
+                      }}
+                      disabled={singleSubmitting}
+                    />
+                    {singleErrors.student_email && (
+                      <span className="field-error">
+                        <AlertTriangle size={13} />
+                        {singleErrors.student_email}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 7. Parent / Guardian Name (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-parent-name">
+                      Parent / Guardian Name <span className="opt-label">(Optional)</span>
+                    </label>
+                    <input
+                      id="single-parent-name"
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Karuppasamy M"
+                      value={singleForm.parent_name}
+                      onChange={(e) => setSingleForm((prev) => ({ ...prev, parent_name: e.target.value }))}
+                      disabled={singleSubmitting}
+                    />
+                  </div>
+
+                  {/* 8. Parent Phone Number (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-parent-phone">
+                      Parent Phone Number <span className="opt-label">(Optional)</span>
+                    </label>
+                    <input
+                      id="single-parent-phone"
+                      type="tel"
+                      className="form-input"
+                      placeholder="e.g. 9876543211"
+                      value={singleForm.parent_phone}
+                      onChange={(e) => setSingleForm((prev) => ({ ...prev, parent_phone: e.target.value }))}
+                      disabled={singleSubmitting}
+                    />
+                  </div>
+                </div>
+
+                {/* ── Section 3: Bus Transit Assignment (Optional) ── */}
+                <div className="form-section-header">
+                  <span className="form-section-title">Bus Transit Assignment</span>
+                  <span className="form-section-badge form-section-badge--optional">Optional</span>
+                </div>
+
+                <div className="form-grid-2col">
+                  {/* 9. Select Bus Route Dropdown (Optional) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-route">
+                      <RouteIcon size={14} className="form-label-icon" /> Assigned Bus Route
+                    </label>
+                    <select
+                      id="single-student-route"
+                      className="form-select"
+                      value={singleForm.route_id ? String(singleForm.route_id) : ''}
+                      onChange={handleRouteChange}
+                      onFocus={() => {
+                        if (!availableRoutes || availableRoutes.length === 0) fetchAvailableRoutes();
+                      }}
+                      disabled={singleSubmitting || loadingRoutes}
+                    >
+                      <option value="">
+                        {loadingRoutes
+                          ? '⏳ Loading available routes...'
+                          : availableRoutes.length === 0
+                          ? '— No routes available (Click to load) —'
+                          : '— Select Route (Optional) —'}
                       </option>
-                    ))}
-                  </select>
+                      {availableRoutes.map((rt) => (
+                        <option key={rt.id} value={String(rt.id)}>
+                          {rt.route_name || `Route ${rt.id}`} {rt.origin ? `(${rt.origin} → ${rt.destination || 'AMCET'})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="field-hint">Assign student to an AMCET college bus route</span>
+                  </div>
+
+                  {/* 10. Select Boarding Stop Dropdown (dynamically populated) */}
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="single-student-stop">
+                      <MapPin size={14} className="form-label-icon" /> Assigned Bus Stop
+                    </label>
+                    <select
+                      id="single-student-stop"
+                      className="form-select"
+                      value={singleForm.stop_id}
+                      onChange={handleSingleStopChange}
+                      disabled={singleSubmitting || !singleForm.route_id || loadingStops}
+                    >
+                      <option value="">
+                        {loadingStops
+                          ? '⏳ Loading stops from route JSON...'
+                          : !singleForm.route_id
+                            ? '— Select a route first to load stops —'
+                            : routeStops.length === 0
+                              ? '— No stops available for this route —'
+                              : '— Select Assigned Bus Stop —'}
+                      </option>
+                      {routeStops.map((st) => (
+                        <option key={st.id} value={st.id}>
+                          {st.stop_order ? `#${st.stop_order} ` : ''}{st.stop_name || `Stop ${st.id}`}
+                        </option>
+                      ))}
+                    </select>
+                    {singleForm.route_id && !loadingStops && routeStops.length > 0 && (
+                      <span className="field-hint">
+                        {routeStops.length} stop{routeStops.length === 1 ? '' : 's'} available along this route
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="modal-actions">
@@ -1755,10 +2393,10 @@ function StudentsPageContent() {
                                 row.statusType === 'ready'
                                   ? 'row-ready'
                                   : row.statusType === 'dup_file'
-                                  ? 'row-dup-file'
-                                  : row.statusType === 'dup_db'
-                                  ? 'row-dup-db'
-                                  : 'row-error'
+                                    ? 'row-dup-file'
+                                    : row.statusType === 'dup_db'
+                                      ? 'row-dup-db'
+                                      : 'row-error'
                               }
                             >
                               <td>{row.line}</td>
@@ -1977,7 +2615,7 @@ function StudentsPageContent() {
       {/* ── 9. Delete Confirmation Modal ────────────────────────────── */}
       {studentToDelete && (
         <div className="modal-overlay" onClick={() => !deleting && setStudentToDelete(null)}>
-          <div className="modal-dialog modal-dialog--sm" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-dialog modal-dialog--sm" ref={deleteModalRef} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-header__title">
                 <h2>Delete Student Record</h2>
@@ -2024,16 +2662,6 @@ function StudentsPageContent() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── 10. Floating Toast Alerts ───────────────────────────────── */}
-      {toast && (
-        <div className={`floating-toast floating-toast--${toast.type}`}>
-          {toast.type === 'success' && <CheckCircle2 size={18} />}
-          {toast.type === 'warning' && <AlertTriangle size={18} />}
-          {toast.type === 'error' && <AlertTriangle size={18} />}
-          <span>{toast.message}</span>
         </div>
       )}
     </div>

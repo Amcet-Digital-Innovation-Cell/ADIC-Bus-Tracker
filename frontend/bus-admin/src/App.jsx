@@ -44,9 +44,9 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('isLoggedIn') === 'true');
-  const [userEmail, setUserEmail] = useState(() => sessionStorage.getItem('userEmail') || 'admin@example.com');
-  const [authToken, setAuthToken] = useState(() => sessionStorage.getItem('authToken') || null);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true');
+  const [userEmail, setUserEmail] = useState(() => sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail') || 'admin@example.com');
+  const [authToken, setAuthToken] = useState(() => sessionStorage.getItem('authToken') || localStorage.getItem('authToken') || null);
   const [rawBuses, setRawBuses] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -78,7 +78,9 @@ export default function App() {
             sessionStorage.setItem('userEmail', session.user.email);
           }
           sessionStorage.setItem('authToken', session.access_token);
+          localStorage.setItem('authToken', session.access_token);
           sessionStorage.setItem('isLoggedIn', 'true');
+          localStorage.setItem('isLoggedIn', 'true');
         }
       }).catch((err) => {
         console.warn('[App] getSession error:', err);
@@ -94,10 +96,14 @@ export default function App() {
           if (session?.access_token) {
             setAuthToken(session.access_token);
             sessionStorage.setItem('authToken', session.access_token);
+            localStorage.setItem('authToken', session.access_token);
+            sessionStorage.setItem('isLoggedIn', 'true');
+            localStorage.setItem('isLoggedIn', 'true');
             setIsLoggedIn(true);
             if (session.user?.email) {
               setUserEmail(session.user.email);
               sessionStorage.setItem('userEmail', session.user.email);
+              localStorage.setItem('userEmail', session.user.email);
             }
           }
         } else if (event === 'SIGNED_OUT') {
@@ -201,6 +207,9 @@ export default function App() {
           sessionStorage.setItem('isLoggedIn', 'true');
           sessionStorage.setItem('userEmail', email);
           sessionStorage.setItem('authToken', token);
+          localStorage.setItem('isLoggedIn', 'true');
+          localStorage.setItem('userEmail', email);
+          localStorage.setItem('authToken', token);
           setUserEmail(email);
           setAuthToken(token);
           setIsLoggedIn(true);

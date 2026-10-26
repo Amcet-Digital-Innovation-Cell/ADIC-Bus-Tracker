@@ -104,8 +104,10 @@ export const normalizeStudent = (raw) => {
     parent_phone: raw.parent_phone || '',
     route_id: raw.route_id || null,
     route_name: raw.route_name || '',
-    bus_number: raw.bus_number || '',
+    stop_id: raw.stop_id !== undefined && raw.stop_id !== null ? String(raw.stop_id) : null,
+    stop_name: raw.stop_name || raw.boarding_stop || '',
     boarding_stop: raw.boarding_stop || raw.stop_name || '',
+    bus_number: raw.bus_number || '',
     created_at: raw.created_at || raw.createdAt || null,
   };
 
@@ -141,25 +143,78 @@ export const studentService = {
   },
 
   /**
+   * Fetch stops array for a specific route from JSON column
+   * Endpoint: GET /api/routes/:route_id/stops
+   * @param {string|number} routeId
+   * @returns {Promise<Array>}
+   */
+  fetchRouteStops: async (routeId) => {
+    if (!routeId) return [];
+    try {
+      const res = await apiClient.get(`/api/routes/${encodeURIComponent(routeId)}/stops`);
+      if (Array.isArray(res?.data)) return res.data;
+      if (Array.isArray(res?.stops)) return res.stops;
+      if (Array.isArray(res)) return res;
+      return [];
+    } catch (err) {
+      console.error(`[studentService] Error fetching stops for route ${routeId}:`, err.message);
+      throw err;
+    }
+  },
+
+  /**
    * Add a new student record
    * Endpoint: POST /api/students
-   * @param {Object} student - { student_id, name, year, academic_year }
+   * @param {Object} student - { student_id, name, year, academic_year, route_id, stop_id }
    */
-  addStudent: async ({ student_id, student_name, name, year, academic_year }) => {
+  addStudent: async ({
+    student_id,
+    student_name,
+    name,
+    year,
+    academic_year,
+    department,
+    student_mobile,
+    phone,
+    student_email,
+    email,
+    parent_name,
+    parent_phone,
+    route_id,
+    route_name,
+    stop_id,
+    stop_name,
+    boarding_stop,
+  }) => {
     const cleanId = String(student_id || '').trim();
     const cleanName = String(student_name || name || '').trim();
-    const rawYear = year || academic_year || '1st Year';
+    const rawYear = academic_year || year || '1st Year';
     const dbYear = mapYearToDb(rawYear);
 
     if (!cleanId) throw new Error('Student ID is required');
     if (!cleanName) throw new Error('Student Name is required');
-    if (!dbYear) throw new Error('Year is required');
+    if (!dbYear) throw new Error('Academic Year is required');
+
+    const emailValue = (student_email || email) ? String(student_email || email).trim().toLowerCase() : null;
+    const phoneValue = (student_mobile || phone) ? String(student_mobile || phone).trim() : null;
+    const cleanStopName = (stop_name || boarding_stop) ? String(stop_name || boarding_stop).trim() : null;
 
     const payload = {
       student_id: cleanId,
       student_name: cleanName,
       year: dbYear,
       academic_year: dbYear,
+      department: department ? String(department).trim() : null,
+      student_mobile: phoneValue,
+      student_email: emailValue,
+      email: emailValue,
+      parent_name: parent_name ? String(parent_name).trim() : null,
+      parent_phone: parent_phone ? String(parent_phone).trim() : null,
+      route_id: (route_id !== undefined && route_id !== null && route_id !== '') ? parseInt(route_id, 10) : null,
+      route_name: route_name ? String(route_name).trim() : null,
+      stop_id: (stop_id !== undefined && stop_id !== null && stop_id !== '') ? String(stop_id).trim() : null,
+      stop_name: cleanStopName,
+      boarding_stop: cleanStopName,
     };
 
     try {
