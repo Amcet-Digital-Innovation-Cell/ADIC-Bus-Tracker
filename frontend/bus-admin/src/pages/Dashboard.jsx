@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bus, Radio, GraduationCap, Map, X, Maximize2 } from 'lucide-react';
 import MapView from '../components/MapView';
 import BusList from '../components/BusList';
 import BusInfoCard from '../components/BusInfoCard';
 import TrackLocationView from '../components/TrackLocationView';
+import { studentService } from '../lib/studentService';
+import supabase from '../lib/supabaseClient';
 import './Dashboard.css';
 
 function KpiCard({ variant, icon: Icon, iconColor, label, value, sub }) {
@@ -29,8 +31,40 @@ export default function Dashboard({ buses, authToken }) {
   const activeBuses = buses.filter(b => b.status === 'Active' || b.status === 'active').length;
   const offline = buses.filter(b => b.status === 'Inactive' || b.status === 'inactive' || b.status === 'Pending (GPS)').length;
 
-  // totalStudents will come from the API; display 0 until data is loaded
-  const totalStudents = 0;
+  // totalStudents dynamically loaded from studentService / Supabase
+  const [totalStudents, setTotalStudents] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    const updateStudentCount = () => {
+      studentService.fetchStudents().then(list => {
+        if (isMounted && Array.isArray(list)) setTotalStudents(list.length);
+      }).catch(() => {});
+    };
+
+    // 1. Initial count on mount
+    updateStudentCount();
+
+    // 2. Realtime listener: only updates when a student is added/removed in DB
+    let channel = null;
+    if (typeof supabase?.channel === 'function') {
+      try {
+        channel = supabase
+          .channel('dashboard-students-count')
+          .on('postgres_changes', { event: '*', schema: 'bus_tracking', table: 'students' }, () => {
+            updateStudentCount();
+          })
+          .subscribe();
+      } catch (_) {}
+    }
+
+    return () => {
+      isMounted = false;
+      if (channel && typeof supabase?.removeChannel === 'function') {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []);
 
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
 

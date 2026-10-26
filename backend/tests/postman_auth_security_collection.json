@@ -1,0 +1,246 @@
+{
+  "info": {
+    "_postman_id": "amcet-transit-auth-security-suite",
+    "name": "AMCET Transit - Auth & Security Test Suite",
+    "description": "Comprehensive security & JWT authentication test suite for AMCET Transit Backend (Node.js, Express, PostgreSQL, Supabase).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "valid_token",
+      "value": "PASTE_YOUR_ACTIVE_SUPABASE_ACCESS_TOKEN_HERE",
+      "type": "string"
+    },
+    {
+      "key": "expired_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDAwMDAwMDAsInN1YiI6InVzcl9leHBpcmVkIn0.expired_signature",
+      "type": "string"
+    },
+    {
+      "key": "malformed_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid_payload_content.tampered_signature",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Missing Token Test (Protected GET /api/routes)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/routes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
+        },
+        "description": "Verifies that an unauthenticated request without an Authorization header is rejected with 401 Unauthorized."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('Response indicates missing token error', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.success).to.eql(false);",
+              "    pm.expect(json.error).to.include('Authorization token required');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Invalid / Tampered Token Test (GET /api/routes)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{malformed_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
+        },
+        "description": "Verifies that a tampered or fake JWT signature is rejected with 401 Unauthorized."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('Response indicates invalid or rejected token', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.success).to.eql(false);",
+              "    pm.expect(json.error).to.match(/Invalid or expired token|Token validation failed/i);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Expired Token Test (GET /api/routes)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{expired_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
+        },
+        "description": "Verifies that an expired JWT token is properly caught and rejected with 401 Unauthorized."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('Response indicates expired token', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.success).to.eql(false);",
+              "    pm.expect(json.error).to.match(/Invalid or expired token/i);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Valid Token & Authorized Access (GET /api/routes)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{valid_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes"
+          ]
+        },
+        "description": "Verifies that an authenticated request with a valid Supabase JWT returns 200 OK and JSON route data."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200 OK', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has success: true and data payload', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.success).to.eql(true);",
+              "    pm.expect(json.data || json.routes).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Schema & Mutation Protection (POST /api/students/import)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"students\": [\n    {\n      \"student_id\": \"HACK999\",\n      \"student_name\": \"Intruder\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/students/import",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "students",
+            "import"
+          ]
+        },
+        "description": "Verifies that modifying student roster data without an authorization token is strictly blocked with 401 Unauthorized."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 401 Unauthorized', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "pm.test('Database mutation blocked', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.success).to.eql(false);",
+              "    pm.expect(json.error).to.include('Authorization token required');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

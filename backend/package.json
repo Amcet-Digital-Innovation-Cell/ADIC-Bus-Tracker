@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "simulate": "node tracker.js"
+    "dev": "nodemon -e js,json,env server.js",
+    "simulate": "node tracker.js",
+    "test": "jest tests/auth.test.js --runInBand --detectOpenHandles --forceExit"
   },
   "keywords": [],
   "author": "",
@@ -18,13 +19,18 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.4",
     "axios": "^1.19.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "googleapis": "^186.0.0",
     "node-fetch": "^2.7.0",
+    "resend": "^6.34.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "jest": "^30.5.2",
+    "nodemon": "^1.14.10",
+    "supertest": "^7.3.1"
   }
 }

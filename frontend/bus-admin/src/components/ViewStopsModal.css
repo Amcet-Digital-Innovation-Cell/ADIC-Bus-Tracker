@@ -1,0 +1,436 @@
+/* ============================================================
+   ViewStopsModal.css — Modern glassmorphic Stops Timeline Modal
+   ============================================================ */
+
+.view-stops-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: viewStopsFadeIn 0.22s ease-out;
+}
+
+@keyframes viewStopsFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.view-stops-panel {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.28), 0 0 1px 1px rgba(0, 0, 0, 0.05);
+  width: 100%;
+  max-width: 540px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: viewStopsScaleUp 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes viewStopsScaleUp {
+  from {
+    transform: scale(0.95) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.view-stops-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  flex-shrink: 0;
+}
+
+.view-stops-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.view-stops-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.view-stops-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #dbeafe;
+}
+
+.view-stops-bus-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.view-stops-count-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.view-stops-close-btn {
+  background: #f1f5f9;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.view-stops-close-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.view-stops-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.015em;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+}
+
+.view-stops-path-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #64748b;
+  background: #f8fafc;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.path-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.path-node--origin {
+  color: #059669;
+}
+
+.path-node--dest {
+  color: #dc2626;
+}
+
+.path-arrow {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+/* ── Search Bar ─────────────────────────────────────────── */
+.view-stops-search-bar {
+  padding: 10px 24px 8px;
+  position: relative;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+}
+
+.view-stops-search-icon {
+  position: absolute;
+  left: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.view-stops-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 34px 0 38px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1e293b;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.view-stops-search-input:focus {
+  background: #ffffff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.view-stops-search-clear {
+  position: absolute;
+  right: 34px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+/* ── Body & Timeline ────────────────────────────────────── */
+.view-stops-body {
+  padding: 18px 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+}
+
+.view-stops-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: #64748b;
+}
+
+.view-stops-empty-icon {
+  color: #cbd5e1;
+  margin-bottom: 12px;
+}
+
+.view-stops-empty h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 4px 0;
+}
+
+.view-stops-empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+.view-stops-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.stop-item {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  position: relative;
+}
+
+/* Marker Column */
+.stop-marker-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.stop-marker-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  border: 2px solid #cbd5e1;
+  color: #64748b;
+  z-index: 2;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.stop-item.role--origin .stop-marker-dot {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #059669;
+}
+
+.stop-item.role--dest .stop-marker-dot {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+}
+
+.stop-item.role--waypoint .stop-marker-dot {
+  background: #f0fdf4;
+  border-color: #3b82f6;
+  color: #2563eb;
+}
+
+.dot-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+.stop-connector-line {
+  width: 2px;
+  flex: 1;
+  background: #e2e8f0;
+  margin: 2px 0;
+}
+
+.stop-item.role--origin .stop-connector-line {
+  background: linear-gradient(180deg, #10b981 0%, #cbd5e1 100%);
+}
+
+/* Stop Card */
+.stop-details-card {
+  flex: 1;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  transition: all 0.2s ease;
+}
+
+.stop-details-card:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.stop-item.role--origin .stop-details-card {
+  border-left: 3px solid #10b981;
+}
+
+.stop-item.role--dest .stop-details-card {
+  border-left: 3px solid #ef4444;
+}
+
+.stop-item.role--waypoint .stop-details-card {
+  border-left: 3px solid #3b82f6;
+}
+
+.stop-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.stop-seq-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stop-role-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.stop-role-tag.role--origin {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.stop-role-tag.role--dest {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.stop-role-tag.role--waypoint {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.stop-name-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.stop-geo-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: monospace;
+  margin-top: 3px;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+.view-stops-footer {
+  padding: 14px 24px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.view-stops-footer-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.btn-view-stops-close {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-view-stops-close:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}

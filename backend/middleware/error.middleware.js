@@ -22,8 +22,13 @@ const config = require("../config/env");
  * @param {import("express").NextFunction} next
  */
 exports.errorHandler = (err, req, res, next) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
+  let status = err.status || err.statusCode || 500;
+  let message = err.message || "Internal Server Error";
+
+  // Handle JSON parse errors from express.json() cleanly
+  if (err instanceof SyntaxError && status === 400 && 'body' in err) {
+    message = "Malformed or invalid JSON payload in request body.";
+  }
 
   // Always log the full error on the server
   console.error(
@@ -35,10 +40,11 @@ exports.errorHandler = (err, req, res, next) => {
     console.error(err.stack);
   }
 
-  // Never leak stack traces to clients in production
+  // Consistent JSON response for mobile & web clients
   res.status(status).json({
     success: false,
     error: message,
+    message: message, // Alias for Flutter apps reading message field
     ...(config.isDev && { stack: err.stack }),
   });
 };

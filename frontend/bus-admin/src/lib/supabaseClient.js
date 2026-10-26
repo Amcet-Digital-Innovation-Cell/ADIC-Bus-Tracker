@@ -15,7 +15,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL;
+const supabaseUrl= import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /**
@@ -52,6 +52,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
       persistSession: true,       // Keep user logged in on page refresh
       autoRefreshToken: true,     // Auto-renew JWT before expiry
       storageKey: "amcet-transit-auth", // Namespaced key in localStorage
+    },
+    db: {
+      schema: "bus_tracking",     // Target custom bus_tracking schema
     },
   });
 }

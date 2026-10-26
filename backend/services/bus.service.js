@@ -3,22 +3,16 @@
  * ─────────────────────────────────────────────────────────────
  * Bus data access layer.
  *
- * This service is READ-ONLY for bus metadata.
+ * Bus stops are sourced directly from the bus's associated route
+ * in transport.bus_routes (stops JSONB column).
  * GPS coordinate updates are handled exclusively by gpsUpdater.js.
- *
- * Rules (per architecture requirements):
- *   ✅ SELECT  — allowed (read bus list, read single bus)
- *   ✅ UPDATE  — allowed for bus metadata edits (name, route, etc.)
- *   ❌ INSERT  — NEVER insert buses (buses are pre-seeded)
- *   ❌ DELETE  — NEVER delete buses
- *   ❌ CREATE TABLE — NEVER (schema is frozen)
  * ─────────────────────────────────────────────────────────────
  */
 
-const { supabase, adminSupabase } = require("../config/supabase");
+const { db } = require("../config/supabase");
 
-/** Use admin client when available (bypasses RLS for writes) */
-const writeClient = () => adminSupabase || supabase;
+/** Use schema-scoped transport client (targets transport schema) */
+const writeClient = () => db.transport;
 
 /**
  * mergeGpsToBuses
@@ -71,106 +65,45 @@ const mergeGpsToBuses = async (busOrBuses) => {
 };
 
 /**
- * getBusStops
- * Returns all bus_stops for a given bus_id, ordered by stop_order ascending.
- *
- * @param {string|number} busId
- * @returns {Promise<object[]>}
+ * Normalizes stops array into a clean JSON array of objects
  */
-exports.getBusStops = async (busId) => {
-  const { data, error } = await writeClient()
-    .from("bus_stops")
-    .select("*")
-    .eq("bus_id", busId)
-    .order("stop_order", { ascending: true });
-
-  if (error) {
-    console.warn(`[getBusStops] Failed for bus_id ${busId}:`, error.message);
-    return [];
+const normalizeStops = (stops) => {
+  if (!stops) return [];
+  let list = stops;
+  if (typeof list === "string") {
+    try {
+      list = JSON.parse(list);
+    } catch (e) {
+      list = [];
+    }
   }
+  if (!Array.isArray(list)) return [];
 
-  return (data || []).map((s) => ({
-    id: s.id,
-    bus_id: s.bus_id,
-    stop_name: (s.stop_name || "").toUpperCase(),
-    stop_order: s.stop_order,
-  }));
-};
-
-/**
- * saveBusStops
- * Replaces existing bus_stops for a given bus_id with new ordered stops.
- *
- * @param {string|number} busId
- * @param {Array} stops
- * @returns {Promise<object[]>}
- */
-exports.saveBusStops = async (busId, stops) => {
-  const client = writeClient();
-  const numericBusId = parseInt(busId, 10);
-
-  // Safety guard: require a non-empty array to proceed with delete+insert.
-  // An empty or non-array value is treated as "no change" to prevent accidental data wipe.
-  if (!Array.isArray(stops) || stops.length === 0) {
-    console.warn(`[saveBusStops] Skipping empty stops array for bus_id ${numericBusId} — existing stops preserved.`);
-    return await exports.getBusStops(numericBusId);
-  }
-
-  // 1. Build and validate the insert payload BEFORE deleting existing stops
-  const stopPayloads = stops
+  return list
     .map((s, index) => {
-      const name = typeof s === "string" ? s : (s.stop_name || "");
-      const trimmedName = name.trim().toUpperCase();
-      if (!trimmedName) return null;
-      return {
-        bus_id: numericBusId,
-        stop_name: trimmedName,
-        stop_order: index + 1,
-      };
+      if (typeof s === "string") {
+        const name = s.trim().toUpperCase();
+        return name ? { id: index + 1, stop_name: name, stop_order: index + 1 } : null;
+      }
+      if (typeof s === "object" && s !== null) {
+        const name = String(s.stop_name || s.name || "").trim().toUpperCase();
+        return name
+          ? {
+              id: s.id !== undefined ? s.id : index + 1,
+              stop_name: name,
+              stop_order: s.stop_order !== undefined ? Number(s.stop_order) : index + 1,
+            }
+          : null;
+      }
+      return null;
     })
-    .filter(Boolean);
-
-  // If all stops had empty names, preserve existing data
-  if (stopPayloads.length === 0) {
-    console.warn(`[saveBusStops] All stop names were empty for bus_id ${numericBusId} — existing stops preserved.`);
-    return await exports.getBusStops(numericBusId);
-  }
-
-  // 2. Delete existing stops for this bus
-  const { error: delErr } = await client
-    .from("bus_stops")
-    .delete()
-    .eq("bus_id", numericBusId);
-
-  if (delErr) {
-    console.error(`[saveBusStops] Delete error for bus_id ${numericBusId}:`, delErr.message);
-    throw delErr;
-  }
-
-  // 3. Insert new stops
-  const { data: insertedStops, error: insErr } = await client
-    .from("bus_stops")
-    .insert(stopPayloads)
-    .select();
-
-  if (insErr) {
-    console.error(`[saveBusStops] Insert error for bus_id ${numericBusId}:`, insErr.message);
-    throw insErr;
-  }
-
-  return (insertedStops || [])
-    .sort((a, b) => (a.stop_order || 0) - (b.stop_order || 0))
-    .map((s) => ({
-      id: s.id,
-      bus_id: s.bus_id,
-      stop_name: s.stop_name,
-      stop_order: s.stop_order,
-    }));
+    .filter(Boolean)
+    .sort((a, b) => a.stop_order - b.stop_order);
 };
 
 /**
  * getAllBuses
- * Returns all buses ordered by id ascending with their bus-specific stops attached.
+ * Returns all buses ordered by id ascending with their route-specific stops attached.
  *
  * @returns {Promise<object[]>}
  */
@@ -182,41 +115,24 @@ exports.getAllBuses = async () => {
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .order("id", { ascending: true });
 
   if (busesError) throw busesError;
 
-  // Fetch all bus stops
-  const { data: stopsData, error: stopsErr } = await client
-    .from("bus_stops")
-    .select("*")
-    .order("stop_order", { ascending: true });
-
-  if (stopsErr) {
-    console.warn("[getAllBuses] Failed to fetch bus_stops:", stopsErr.message);
-  }
-
-  const stopsMap = {};
-  (stopsData || []).forEach((s) => {
-    if (!stopsMap[s.bus_id]) stopsMap[s.bus_id] = [];
-    stopsMap[s.bus_id].push({
-      id: s.id,
-      bus_id: s.bus_id,
-      stop_name: (s.stop_name || "").toUpperCase(),
-      stop_order: s.stop_order,
-    });
-  });
-
   const mapped = (busesData || []).map((bus) => {
-    const route_name = bus.bus_routes ? bus.bus_routes.routes : bus.route_name;
+    const route = bus.bus_routes;
+    const route_name = route ? route.route_name : bus.route_name;
+    const stops = route && route.stops ? normalizeStops(route.stops) : [];
     const { bus_routes, ...rest } = bus;
+
     return {
       ...rest,
       route_name,
-      stops: stopsMap[bus.id] || [],
+      stops,
     };
   });
 
@@ -225,7 +141,7 @@ exports.getAllBuses = async () => {
 
 /**
  * getBusById
- * Returns a single bus by primary key with its bus-specific stops.
+ * Returns a single bus by primary key with its route-based stops.
  *
  * @param {string|number} id
  * @returns {Promise<object>}
@@ -238,7 +154,8 @@ exports.getBusById = async (id) => {
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .eq("id", id)
@@ -250,9 +167,10 @@ exports.getBusById = async (id) => {
     throw err;
   }
 
-  const route_name = data.bus_routes ? data.bus_routes.routes : data.route_name;
+  const route = data.bus_routes;
+  const route_name = route ? route.route_name : data.route_name;
+  const stops = route && route.stops ? normalizeStops(route.stops) : [];
   const { bus_routes, ...rest } = data;
-  const stops = await exports.getBusStops(id);
 
   const bus = {
     ...rest,
@@ -265,7 +183,7 @@ exports.getBusById = async (id) => {
 
 /**
  * updateBusMetadata
- * Updates non-GPS bus fields (driver name, route, stops, etc.).
+ * Updates non-GPS bus fields (driver name, route_id, registration, etc.).
  * Does NOT update latitude, longitude, or status (GPS pipeline handles those).
  *
  * @param {string|number} id
@@ -274,7 +192,7 @@ exports.getBusById = async (id) => {
  */
 exports.updateBusMetadata = async (id, fields) => {
   // Strip GPS fields — they must only be updated via the GPS pipeline
-  const { latitude, longitude, status, updated_at, stops: inputStops, ...safeFields } = fields;
+  const { latitude, longitude, status, updated_at, stops, ...safeFields } = fields;
 
   const toUpper = (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val);
   const cleanBusNo = (val) => (typeof val === 'string' ? val.replace(/\s+/g, '').toUpperCase() : val);
@@ -299,7 +217,7 @@ exports.updateBusMetadata = async (id, fields) => {
   if (routeIdVal !== undefined && routeIdVal !== null && routeIdVal !== "") {
     const { data: routeData, error: routeError } = await writeClient()
       .from("bus_routes")
-      .select("id, routes")
+      .select("id, route_name")
       .eq("id", routeIdVal)
       .maybeSingle();
 
@@ -317,8 +235,9 @@ exports.updateBusMetadata = async (id, fields) => {
       throw err;
     }
 
+    const fetchedRouteName = routeData.route_name;
     payload.route_id = routeData.id;
-    payload.route_name = routeData.routes ? routeData.routes.toUpperCase() : null;
+    payload.route_name = fetchedRouteName ? fetchedRouteName.toUpperCase() : null;
   } else if (routeIdVal === null || routeIdVal === "") {
     payload.route_id = null;
     payload.route_name = null;
@@ -336,53 +255,18 @@ exports.updateBusMetadata = async (id, fields) => {
     }
   }
 
-  // Handle bus_stops update if stops array was provided
-  let stops = [];
-  if (inputStops !== undefined && Array.isArray(inputStops)) {
-    try {
-      stops = await exports.saveBusStops(id, inputStops);
-    } catch (stopsErr) {
-      console.error(`[updateBusMetadata] saveBusStops failed for bus id ${id}:`, stopsErr.message);
-      throw stopsErr;
-    }
-  } else {
-    stops = await exports.getBusStops(id);
-  }
-
-  const updatedBus = await exports.getBusById(id);
-  return {
-    ...updatedBus,
-    stops,
-  };
-};
-
-/**
- * updateBusStops
- * Dedicated function to update only the stops for a bus.
- * Used by PUT /api/buses/:id/stops endpoint.
- *
- * @param {string|number} id
- * @param {Array} stops
- * @returns {Promise<object[]>}
- */
-exports.updateBusStops = async (id, stops) => {
-  if (!Array.isArray(stops)) {
-    const err = new Error("stops must be an array");
-    err.status = 400;
-    throw err;
-  }
-  return await exports.saveBusStops(id, stops);
+  return await exports.getBusById(id);
 };
 
 /**
  * createBus
- * Creates a new bus record in the buses table and inserts its bus_stops.
+ * Creates a new bus record in the buses table linked to a route in bus_routes.
  *
  * @param {object} fields
  * @returns {Promise<object>}
  */
 exports.createBus = async (fields) => {
-  const { stops: inputStops, ...safeFields } = fields;
+  const { stops, ...safeFields } = fields;
 
   const toUpper = (val) => (typeof val === 'string' ? val.trim().toUpperCase() : val);
   const cleanBusNo = (val) => (typeof val === 'string' ? val.replace(/\s+/g, '').toUpperCase() : val);
@@ -407,7 +291,7 @@ exports.createBus = async (fields) => {
   if (routeIdVal !== undefined && routeIdVal !== null && routeIdVal !== "") {
     const { data: routeData, error: routeError } = await writeClient()
       .from("bus_routes")
-      .select("id, routes")
+      .select("id, route_name")
       .eq("id", routeIdVal)
       .maybeSingle();
 
@@ -418,7 +302,7 @@ exports.createBus = async (fields) => {
     }
 
     payload.route_id = routeData.id;
-    payload.route_name = routeData.routes;
+    payload.route_name = routeData.route_name;
   } else {
     const err = new Error("Route selection is required");
     err.status = 400;
@@ -432,24 +316,15 @@ exports.createBus = async (fields) => {
       *,
       bus_routes (
         id,
-        routes
+        route_name,
+        stops
       )
     `)
     .single();
 
   if (error) throw error;
 
-  // Save stops for the newly created bus if provided
-  let stops = [];
-  if (inputStops !== undefined && Array.isArray(inputStops) && inputStops.length > 0) {
-    stops = await exports.saveBusStops(data.id, inputStops);
-  }
-
-  const createdBus = await exports.getBusById(data.id);
-  return {
-    ...createdBus,
-    stops,
-  };
+  return await exports.getBusById(data.id);
 };
 
 /**
@@ -461,9 +336,6 @@ exports.createBus = async (fields) => {
  */
 exports.deleteBus = async (id) => {
   const client = writeClient();
-  // Delete associated bus_stops first
-  await client.from("bus_stops").delete().eq("bus_id", id);
-
   const { error } = await client
     .from("buses")
     .delete()
