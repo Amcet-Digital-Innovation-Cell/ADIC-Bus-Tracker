@@ -42,9 +42,9 @@ const BusesPage = ({ buses, setBuses }) => {
   const [editingBus, setEditingBus] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [busToDelete, setBusToDelete] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [apiError, setApiError] = useState('');
+  const [saving, setSaving]           = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [apiError, setApiError]       = useState('');
   const cancelDeleteRef = useRef(null);
 
   const emptyForm = {
@@ -58,9 +58,9 @@ const BusesPage = ({ buses, setBuses }) => {
   };
   const [formData, setFormData] = useState(emptyForm);
 
-  const [routesList, setRoutesList] = useState([]);
+  const [routesList, setRoutesList]     = useState([]);
   const [routesLoading, setRoutesLoading] = useState(false);
-  const [routesError, setRoutesError] = useState('');
+  const [routesError, setRoutesError]   = useState('');
 
   // ── Load available routes from bus_routes ──────────────────────────────────
   useEffect(() => {

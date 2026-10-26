@@ -77,3 +77,29 @@ exports.deleteBus = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * GET /api/buses/:id/stops
+ * Returns bus-specific stops for a bus by ID.
+ */
+exports.getBusStops = async (req, res, next) => {
+  try {
+    const stops = await busService.getBusStops(req.params.id);
+    return success(res, stops, "Bus stops retrieved successfully");
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PUT /api/buses/:id/stops
+ * Replaces all stops for a bus by ID.
+ */
+exports.updateBusStops = async (req, res, next) => {
+  try {
+    const stops = await busService.updateBusStops(req.params.id, req.body.stops || req.body);
+    return success(res, stops, "Bus stops updated successfully");
+  } catch (err) {
+    next(err);
+  }
+};
